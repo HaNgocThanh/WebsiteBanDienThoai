@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="../tests/PhoneStore.IntegrationTests/PhoneStore.IntegrationTests.csproj" />
+  <Project Path="../tests/PhoneStore.UnitTests/PhoneStore.UnitTests.csproj" />
+  <Project Path="PhoneStore.Api/PhoneStore.Api.csproj" />
+</Solution>

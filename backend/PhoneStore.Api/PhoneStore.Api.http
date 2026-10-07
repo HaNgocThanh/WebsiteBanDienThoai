@@ -1,0 +1,6 @@
+@PhoneStore.Api_HostAddress = http://localhost:5285
+
+GET {{PhoneStore.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

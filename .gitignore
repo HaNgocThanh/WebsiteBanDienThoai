@@ -1,0 +1,24 @@
+# Merge these entries into the existing project .gitignore.
+.env
+.env.*
+!.env.example
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/TestResults/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.vitest/
+scripts/p0-initial.sql
+scripts/p0-schema.sql
+
+# Local agent instructions, skills, configuration and planning artifacts
+.agents/
+.codex/
+.cursor/
+**/AGENTS.md
+/AGENT-KIT-README.md
+/docs/agent-kit/
+/phonestore-plan-rules/
+/scripts/validate-agent-kit.py

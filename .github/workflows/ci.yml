@@ -1,0 +1,61 @@
+name: PhoneStore CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Start isolated SQL Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_PASSWORD="Ci-${RANDOM}-$(openssl rand -hex 16)!"
+          echo "::add-mask::$TEST_PASSWORD"
+          echo "MSSQL_SA_PASSWORD=$TEST_PASSWORD" >> "$GITHUB_ENV"
+          echo "PHONESTORE_TEST_SQL=Server=127.0.0.1,14330;Database=PhoneStore_Test_CI;User Id=sa;Password=$TEST_PASSWORD;Encrypt=True;TrustServerCertificate=True;" >> "$GITHUB_ENV"
+          export MSSQL_SA_PASSWORD="$TEST_PASSWORD"
+          docker run -d --name phonestore-ci-sql -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e MSSQL_SA_PASSWORD -p 127.0.0.1:14330:1433 mcr.microsoft.com/mssql/server:2022-latest
+          ready=0
+          for _ in $(seq 1 60); do
+            if docker exec phonestore-ci-sql sh -c 'SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q "SELECT 1"' >/dev/null 2>&1; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+      - name: Restore and build
+        run: dotnet build backend/PhoneStore.slnx --configuration Release
+      - name: Contract unit tests
+        run: dotnet test tests/PhoneStore.UnitTests --configuration Release --no-build
+      - name: API and SQL integration tests
+        run: dotnet test tests/PhoneStore.IntegrationTests --configuration Release --no-build
+      - name: Frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend checks
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm run build
+          npm run test
+      - name: Install test browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Real API browser smoke
+        working-directory: frontend
+        run: npm run test:e2e
+      - name: Stop job SQL container
+        if: always()
+        run: docker rm -f phonestore-ci-sql
+
