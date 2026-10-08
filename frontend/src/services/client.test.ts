@@ -7,6 +7,24 @@ import { fieldProblemFixture } from '../test/fixtures'
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
 
+test('multipart upload uses session CSRF without overriding the browser boundary', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(json({ token: 'current-token' })).mockResolvedValueOnce(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', fetchMock)
+  const form = new FormData(); form.set('file', new File(['png'], 'test.png', { type: 'image/png' }))
+  await request('/api/v1/admin/products/1/images', decodeEmpty, { method: 'POST', form, headers: { 'Content-Type': 'wrong-boundary' } })
+  const init = fetchMock.mock.calls[1][1] as RequestInit
+  expect(init.body).toBe(form)
+  expect(new Headers(init.headers).has('Content-Type')).toBe(false)
+  expect(new Headers(init.headers).get('X-CSRF-TOKEN')).toBe('current-token')
+  expect(init.credentials).toBe('same-origin')
+})
+test('mixed JSON/multipart or GET uploads are rejected before fetching', async () => {
+  const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock)
+  await expect(request('/api/v1/admin/products/1/images', decodeEmpty, { method: 'POST', body: {}, form: new FormData() })).rejects.toBeInstanceOf(TypeError)
+  await expect(request('/api/v1/admin/products/1/images', decodeEmpty, { form: new FormData() })).rejects.toBeInstanceOf(TypeError)
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
 test('mutation fetches cookie-bound CSRF first and sends authoritative token plus strong ETag', async () => {
   const fetchMock = vi.fn().mockResolvedValueOnce(json({ token: 'test-csrf' })).mockResolvedValueOnce(new Response(null, { status: 204 }))
   vi.stubGlobal('fetch', fetchMock)

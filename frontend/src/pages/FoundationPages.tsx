@@ -1,14 +1,8 @@
-import { Link, useSearchParams } from 'react-router'
+import { Link } from 'react-router'
 import { EmptyState } from '../components/primitives'
 
 export function ComingSoonPage({ title, message }: { title: string; message: string }) {
   return <section className="page-section"><span className="eyebrow">PHONESTORE</span><h1>{title}</h1><EmptyState title="Chức năng đang được chuẩn bị" action={<Link className="button button-outline" to="/">Về trang chủ</Link>}><p>{message}</p></EmptyState></section>
-}
-
-export function ProductsPage() {
-  const [params] = useSearchParams()
-  const search = params.get('search')
-  return <section className="page-section"><span className="eyebrow">KHÁM PHÁ</span><h1>Điện thoại</h1>{search && <p className="search-query">Bạn đang tìm: <strong>{search}</strong></p>}<EmptyState title="Danh mục đang được chuẩn bị" action={<Link className="button button-outline" to="/">Về trang chủ</Link>}><p>Các sản phẩm sẽ xuất hiện tại đây khi sẵn sàng.</p></EmptyState></section>
 }
 
 export function NotFoundPage({ admin = false }: { admin?: boolean }) {
@@ -16,5 +10,5 @@ export function NotFoundPage({ admin = false }: { admin?: boolean }) {
 }
 
 export function AdminOverviewPage() {
-  return <section className="page-section"><span className="eyebrow">QUẢN TRỊ CỬA HÀNG</span><h1>Tổng quan</h1><p className="muted">Không gian quản lý sản phẩm và đơn hàng của PhoneStore.</p><div className="notice">Các công cụ quản trị đang được chuẩn bị. Chưa có thao tác quản lý khả dụng.</div><div className="admin-tiles"><Link to="/admin/products"><span className="tile-number">01</span><h2>Danh mục sản phẩm</h2><p>Đi đến khu vực sản phẩm.</p><span aria-hidden="true">↗</span></Link><Link to="/admin/orders"><span className="tile-number">02</span><h2>Đơn hàng</h2><p>Đi đến khu vực đơn hàng.</p><span aria-hidden="true">↗</span></Link></div></section>
+  return <section className="page-section"><span className="eyebrow">QUẢN TRỊ CỬA HÀNG</span><h1>Tổng quan</h1><p className="muted">Quản lý hãng, danh mục, sản phẩm, phiên bản và ảnh của PhoneStore.</p><div className="admin-tiles"><Link to="/admin/products"><span className="tile-number">01</span><h2>Danh mục sản phẩm</h2><p>Tạo, chỉnh sửa và ẩn sản phẩm.</p><span aria-hidden="true">↗</span></Link><Link to="/admin/brands"><span className="tile-number">02</span><h2>Hãng</h2><p>Quản lý các hãng điện thoại.</p><span aria-hidden="true">↗</span></Link><Link to="/admin/categories"><span className="tile-number">03</span><h2>Danh mục</h2><p>Quản lý các nhóm sản phẩm.</p><span aria-hidden="true">↗</span></Link><Link to="/admin/inventory"><span className="tile-number">04</span><h2>Tồn kho</h2><p>Nhập hàng, điều chỉnh và xem lịch sử kho.</p><span aria-hidden="true">↗</span></Link></div></section>
 }

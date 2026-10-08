@@ -5,6 +5,7 @@ export type Decoder<T> = (value: unknown) => T
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
+  form?: FormData
   headers?: Record<string, string>
   version?: RowVersion
   signal?: AbortSignal
@@ -43,10 +44,12 @@ async function execute<T>(path: string, decode: Decoder<T>, options: RequestOpti
     const headers = new Headers(options.headers)
     headers.set('Accept', 'application/json')
     if (options.body !== undefined) headers.set('Content-Type', 'application/json')
+    if (options.form) headers.delete('Content-Type')
     const response = await fetch(path, {
       method: options.method ?? 'GET', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
       headers, signal: controller.signal,
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      ...(options.form ? { body: options.form } : {}),
     })
     let payload: unknown
     try { const body = await response.text(); payload = body.trim() ? JSON.parse(body) : undefined }
@@ -75,7 +78,8 @@ async function execute<T>(path: string, decode: Decoder<T>, options: RequestOpti
 export async function request<T>(path: string, decode: Decoder<T>, options: RequestOptions = {}): Promise<T> {
   const target = apiPath(path)
   const method = options.method ?? 'GET'
-  if (method === 'GET' && options.body !== undefined) throw new TypeError('GET requests cannot contain a body.')
+  if (options.form && options.body !== undefined) throw new TypeError('Choose JSON or multipart, not both.')
+  if (method === 'GET' && (options.body !== undefined || options.form)) throw new TypeError('GET requests cannot contain a body.')
   const headers = new Headers(options.headers)
   if (options.version !== undefined) headers.set('If-Match', etag(options.version))
   if (method !== 'GET') {

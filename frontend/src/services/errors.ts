@@ -21,6 +21,18 @@ export class ApiError extends Error {
 }
 
 function errorMessage(status: number, code: string): string {
+  if (code === 'OPERATION_KEY_CONFLICT') return 'Mã thao tác đã dùng với nội dung khác. Kiểm tra lịch sử trước khi tạo thao tác mới.'
+  if (code === 'INSUFFICIENT_AVAILABLE') return 'Không thể giảm quá lượng khả dụng. Tải lại kho và kiểm tra lượng đã giữ.'
+  if (code === 'INVENTORY_LIMIT') return 'Số lượng trong kho vượt giới hạn 2147483647.'
+  if (code === 'INVENTORY_BUSY') return 'Kho đang được cập nhật. Thử lại với cùng mã thao tác.'
+  if (code === 'OPERATION_STORAGE_UNAVAILABLE') return 'Không thể đọc hoặc lưu thao tác chờ trong phiên trình duyệt. Kiểm tra lưu trữ phiên và lịch sử kho trước khi gửi thao tác mới.'
+  if (code === 'DUPLICATE_CATALOG') return 'Tên hãng, đường dẫn, SKU hoặc tổ hợp màu/dung lượng/RAM đã tồn tại. Vui lòng kiểm tra lại.'
+  if (code === 'INACTIVE_PARENT') return 'Hãng, danh mục hoặc sản phẩm đang ẩn. Hãy bật mục cha hoặc lưu mục này ở trạng thái ẩn.'
+  if (code === 'VERSION_MISMATCH') return 'Thông tin đã được người khác thay đổi. Tải phiên bản mới trước khi lưu lại.'
+  if (code === 'CATALOG_BUSY') return 'Danh mục đang được cập nhật. Vui lòng thử lại sau.'
+  if (code === 'IMAGE_UNAVAILABLE') return 'Chưa thể lưu ảnh trong môi trường này. Vui lòng thử lại sau.'
+  if (code === 'INVALID_IMAGE') return 'Ảnh không hợp lệ. Dùng PNG RGB/RGBA 8 bit, không interlace, tối đa 2048 × 2048.'
+  if (code === 'IMAGE_TOO_LARGE') return 'Ảnh vượt quá giới hạn 2 MiB.'
   if (code === 'INVALID_CREDENTIALS') return 'Email hoặc mật khẩu không hợp lệ, hoặc tài khoản đang tạm khóa.'
   if (code === 'EMAIL_NOT_VERIFIED') return 'Vui lòng xác minh email trước khi đăng nhập.'
   if (code === 'INVALID_TOKEN') return 'Liên kết không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu email mới.'

@@ -80,6 +80,11 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddScoped<AuthBootstrap>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.ProfileService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Catalog.CatalogService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.InventoryManagement.InventoryService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.InventoryManagement.InventoryExceptionFilter>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Catalog.CatalogExceptionFilter>();
+builder.Services.AddSingleton<PhoneStore.Api.Services.Catalog.ICatalogImageStore, PhoneStore.Api.Services.Catalog.LocalCatalogImageStore>();
 builder.Services.AddSingleton<IAuthEmailSender, LocalAuthEmailSender>();
 builder.Services.AddRateLimiter(options =>
 {

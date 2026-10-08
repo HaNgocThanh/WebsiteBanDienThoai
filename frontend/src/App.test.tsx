@@ -55,13 +55,13 @@ test('search field exposes validation and encodes text safely into navigation', 
   expect(screen.queryByRole('img')).toBeNull()
 })
 
-test('admin shell is distinct and exposes no fake statistics or write action', async () => {
+test('admin shell is distinct and links to available catalog tools without fake statistics', async () => {
   vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(adminSessionFixture)))))
   renderAt('/admin')
   expect(await screen.findByRole('navigation', { name: 'Điều hướng quản trị' })).toBeTruthy()
   expect(screen.queryByRole('searchbox')).toBeNull()
-  expect(screen.getByText('Các công cụ quản trị đang được chuẩn bị. Chưa có thao tác quản lý khả dụng.')).toBeTruthy()
-  fireEvent.click(screen.getByRole('link', { name: 'Danh mục sản phẩm' }))
+  expect(screen.getByText('Quản lý hãng, danh mục, sản phẩm, phiên bản và ảnh của PhoneStore.')).toBeTruthy()
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Điều hướng quản trị' })).getByRole('link', { name: 'Danh mục sản phẩm' }))
   expect(screen.getByRole('heading', { level: 1, name: 'Danh mục sản phẩm' })).toBeTruthy()
 })
 

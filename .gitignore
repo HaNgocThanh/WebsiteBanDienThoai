@@ -1,6 +1,7 @@
 # Merge these entries into the existing project .gitignore.
 .env
 **/.local-mailbox/
+**/.local-catalog-images/
 .env.*
 !.env.example
 **/bin/
