@@ -23,3 +23,7 @@ scripts/p0-schema.sql
 /docs/agent-kit/
 /phonestore-plan-rules/
 /scripts/validate-agent-kit.py
+
+# Private project documentation and local Git recovery backup
+*.[mM][dD]
+/.local-git-backup/
