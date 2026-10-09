@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { storeCatalog } from '../services/storeCatalog'
 import { ApiError } from '../services/errors'
 import { StoreProductPage, StoreProductsPage } from './StoreCatalog'
+import { CartProvider } from '../cart/CartProvider'
 
 const lookup = { id: '1', name: 'Synthetic', slug: 'synthetic', isActive: true }
 beforeEach(() => { vi.spyOn(storeCatalog, 'brands').mockResolvedValue([lookup]); vi.spyOn(storeCatalog, 'categories').mockResolvedValue([lookup]) })
@@ -29,7 +30,7 @@ test('variant selection changes actual price, availability and only matching ima
     { id: '1', sku: 'A', color: 'Black', storageGb: 128, ramGb: 8, price: 1000000, available: 3 },
     { id: '2', sku: 'B', color: 'White', storageGb: 256, ramGb: 8, price: 2000000, available: 0 },
   ], images: [{ id: '1', variantId: '2', sortOrder: 0, altText: 'White image', imageUrl }] })
-  const view = render(<MemoryRouter initialEntries={['/products/test']}><Routes><Route path="/products/:slug" element={<StoreProductPage />} /></Routes></MemoryRouter>)
+  const view = render(<CartProvider><MemoryRouter initialEntries={['/products/test']}><Routes><Route path="/products/:slug" element={<StoreProductPage />} /></Routes></MemoryRouter></CartProvider>)
   await screen.findByText('Còn 3 sản phẩm'); expect(screen.queryByAltText('White image')).toBeNull(); expect(view.container.querySelector('script')).toBeNull()
   fireEvent.click(screen.getByRole('radio', { name: 'White · 256 GB · RAM 8 GB' })); expect(screen.getByText('Hết hàng')).toBeTruthy(); expect(screen.getByText('2.000.000 ₫')).toBeTruthy(); expect(screen.getByAltText('White image')).toBeTruthy()
 })

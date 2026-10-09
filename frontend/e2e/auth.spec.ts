@@ -1,3 +1,4 @@
+import { selectDestination } from './addressHelpers.js'
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { readdir, readFile } from 'node:fs/promises'
@@ -59,7 +60,7 @@ test('real profile and address CRUD survive reload with one explicit default', a
     await page.getByLabel('Người nhận', { exact: true }).fill(name)
     await page.getByLabel('Điện thoại người nhận').fill('0000000000')
     await page.getByLabel('Số nhà, đường').fill('Synthetic street')
-    await page.getByLabel('Tỉnh, thành phố').fill('Synthetic province')
+    await selectDestination(page)
     await page.getByLabel('Đặt làm mặc định').check()
     await page.getByRole('button', { name: 'Lưu địa chỉ', exact: true }).click()
     await expect(page.getByRole('status')).toContainText('Địa chỉ đã được lưu')

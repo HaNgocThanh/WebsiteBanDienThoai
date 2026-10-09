@@ -6,6 +6,14 @@ import { fieldProblemFixture } from '../test/fixtures'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
+test('guest access expiry never logs out a valid account session', async () => {
+  const invalid = vi.fn(); window.addEventListener('auth-session-invalid', invalid)
+  try {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ code: 'GUEST_ACCESS_REQUIRED' }, 401)))
+    await expect(request('/api/v1/guest/order', decodeEmpty)).rejects.toMatchObject({ code: 'GUEST_ACCESS_REQUIRED' }); expect(invalid).not.toHaveBeenCalled()
+    await expect(request('/api/v1/me', decodeEmpty)).rejects.toMatchObject({ status: 401 }); expect(invalid).toHaveBeenCalledTimes(1)
+  } finally { window.removeEventListener('auth-session-invalid', invalid) }
+})
 
 test('multipart upload uses session CSRF without overriding the browser boundary', async () => {
   const fetchMock = vi.fn().mockResolvedValueOnce(json({ token: 'current-token' })).mockResolvedValueOnce(new Response(null, { status: 204 }))

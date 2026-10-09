@@ -43,6 +43,7 @@ export function StorefrontLayout() {
       </div>
       <nav id="store-nav" className={`store-nav ${open ? 'is-open' : ''}`} aria-label="Điều hướng cửa hàng">
         <NavLink to="/" end onClick={() => setOpen(false)}>Trang chủ</NavLink><NavLink to="/products" onClick={() => setOpen(false)}>Điện thoại</NavLink><NavLink to="/account" onClick={() => setOpen(false)}>Tài khoản</NavLink>
+        <NavLink to="/guest/lookup" onClick={() => setOpen(false)}>Tra cứu đơn</NavLink>
         <Link to="/health" className="nav-utility" onClick={() => setOpen(false)}>Trạng thái kết nối <span aria-hidden="true">↗</span></Link>
       </nav>
     </header>

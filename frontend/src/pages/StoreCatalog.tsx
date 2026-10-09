@@ -1,6 +1,8 @@
+import { QuantityField } from '../components/QuantityField'
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { EmptyState, SubmitButton, TextField } from '../components/primitives'
+import { EmptyState, ErrorNotice, SubmitButton, TextField } from '../components/primitives'
+import { useCart } from '../cart/CartContext'
 import { formatVnd } from '../lib/contracts'
 import { storeCatalog } from '../services/storeCatalog'
 import type { StoreProduct, StoreSummary } from '../services/storeCatalog'
@@ -62,6 +64,9 @@ export function StoreProductPage() {
   return <section className="page-section"><Link to="/products">← Tất cả điện thoại</Link><h1>{resource.data?.name ?? 'Chi tiết điện thoại'}</h1>{!resource.data ? <ResourceNotice error={resource.error} reload={resource.reload} loadingText="Đang tải chi tiết…" /> : <ProductDetail key={slug} product={resource.data} />}</section>
 }
 function ProductDetail({ product }: { product: StoreProduct }) {
+  const cart = useCart()
+  const [quantity, setQuantity] = useState('1')
+  const [cartMessage, setCartMessage] = useState<{ variantId: string; text: string; error: boolean }>()
   const [variantId, setVariantId] = useState(product.variants[0].id)
   const [selectedImage, setSelectedImage] = useState('')
   const variant = product.variants.find(x => x.id === variantId)!
@@ -70,6 +75,7 @@ function ProductDetail({ product }: { product: StoreProduct }) {
   useEffect(() => { document.title = product.name + ' | PhoneStore' }, [product.name])
   return <><div className="store-detail"><section className="store-gallery" aria-label="Ảnh sản phẩm"><div className="store-main-photo"><ProductPhoto key={current?.imageUrl ?? ''} src={current?.imageUrl ?? null} alt={current?.altText ?? product.name} /></div>{images.length > 1 && <div className="store-thumbnails">{images.map((x, i) => <button key={x.id} type="button" aria-label={`Xem ảnh ${i + 1}: ${x.altText}`} aria-pressed={current?.id === x.id} onClick={() => setSelectedImage(x.id)}><img src={x.imageUrl} alt="" /></button>)}</div>}</section>
     <section className="store-detail-info"><span className="eyebrow">{product.brand.name} / {product.category.name}</span><p className="store-product-subtitle">{product.name}</p><p className="store-price" aria-live="polite">{formatVnd(variant.price)}</p><fieldset className="store-variants"><legend>Chọn phiên bản</legend>{product.variants.map(x => <label key={x.id} className={variantId === x.id ? 'is-selected' : ''}><input type="radio" name={`variant-${product.id}`} checked={variantId === x.id} value={x.id} onChange={() => { setVariantId(x.id); setSelectedImage('') }} /><span>{x.color} · {x.storageGb} GB · RAM {x.ramGb} GB</span></label>)}</fieldset><p className={`store-stock ${variant.available ? '' : 'is-empty'}`} role="status">{variant.available ? `Còn ${variant.available.toLocaleString('vi-VN')} sản phẩm` : 'Hết hàng'}</p><small className="muted">SKU: {variant.sku}</small></section></div>
+    <form className="catalog-panel store-add-cart" noValidate onSubmit={e => { e.preventDefault(); const count = Number(quantity); const existing = cart.items.find(x => x.variantId === variantId)?.quantity ?? 0; if (!/^[1-9]\d*$/.test(quantity) || !Number.isSafeInteger(count) || count + existing > variant.available) { setCartMessage({ variantId, text: 'Số lượng phải là số nguyên dương và không vượt lượng còn hàng (kể cả số đã có trong giỏ).', error: true }); return } if (cart.add(variantId, count)) setCartMessage({ variantId, text: 'Đã thêm phiên bản vào giỏ hàng.', error: false }) }}><QuantityField label="Số lượng thêm vào giỏ" max={Math.max(1, variant.available)} value={quantity} onChange={value => { setQuantity(value); setCartMessage(undefined) }} /><SubmitButton disabled={variant.available === 0 || !!cart.error}>Thêm vào giỏ hàng</SubmitButton><Link to="/cart">Xem giỏ hàng →</Link>{cart.error && <ErrorNotice error={cart.error} />}{cartMessage?.variantId === variantId && <p className={`notice ${cartMessage.error ? 'notice-error' : ''}`} role={cartMessage.error ? 'alert' : 'status'}>{cartMessage.text}</p>}</form>
     <section className="catalog-panel store-description"><h2>Mô tả</h2><p>{product.description || 'Chưa có mô tả sản phẩm.'}</p></section>{product.specificationsJson && <section className="catalog-panel"><h2>Thông số bổ sung</h2><pre className="store-specifications">{product.specificationsJson}</pre></section>}
   </>
 }

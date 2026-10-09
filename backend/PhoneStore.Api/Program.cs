@@ -80,6 +80,18 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddScoped<AuthBootstrap>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.ProfileService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Pricing.QuoteService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Checkout.CheckoutService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Checkout.CheckoutIdentity>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Checkout.CheckoutExceptionFilter>();
+builder.Services.AddScoped<PhoneStore.Api.Services.GuestOrders.GuestOrderService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.GuestOrders.GuestOrderSession>();
+builder.Services.AddScoped<PhoneStore.Api.Services.GuestOrders.OrderAccessMailQueue>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Notifications.OrderOutboxProcessor>();
+builder.Services.AddSingleton<PhoneStore.Api.Services.Notifications.IOrderEmailSender, PhoneStore.Api.Services.Notifications.LocalOrderEmailSender>();
+builder.Services.AddHostedService<PhoneStore.Api.Services.Notifications.OrderOutboxWorker>();
+builder.Services.AddSingleton<PhoneStore.Api.Services.AdministrativeLocations>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Pricing.QuoteExceptionFilter>();
 builder.Services.AddScoped<PhoneStore.Api.Services.Catalog.CatalogService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.InventoryManagement.InventoryService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.InventoryManagement.InventoryExceptionFilter>();
@@ -88,7 +100,7 @@ builder.Services.AddSingleton<PhoneStore.Api.Services.Catalog.ICatalogImageStore
 builder.Services.AddSingleton<IAuthEmailSender, LocalAuthEmailSender>();
 builder.Services.AddRateLimiter(options =>
 {
-    foreach (var (name, defaultLimit) in new[] { ("auth", 20), ("csrf", 60) })
+    foreach (var (name, defaultLimit) in new[] { ("auth", 20), ("csrf", 60), ("quote", 60), ("checkout", 20), ("guest", 20) })
         options.AddPolicy(name, context => RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
             {

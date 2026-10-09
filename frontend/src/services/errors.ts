@@ -21,6 +21,22 @@ export class ApiError extends Error {
 }
 
 function errorMessage(status: number, code: string): string {
+  if (code === 'CHECKOUT_STORAGE_UNAVAILABLE') return 'Không thể lưu hoặc đọc phiên đặt hàng. Kiểm tra quyền lưu trữ trình duyệt; nếu đã gửi yêu cầu, hãy tra cứu đơn qua email trước khi đặt lại.'
+  if (code === 'CHECKOUT_NOT_COMPLETED') return 'Chưa có đơn được ghi nhận cho phiên này. Bạn có thể quay lại đặt hàng bằng cùng phiên.'
+  if (code === 'CHECKOUT_EXPIRED') return 'Phiên đặt hàng chưa dùng đã hết hạn. Tính lại báo giá và xác nhận để đặt hàng.'
+  if (code === 'CHECKOUT_NOT_FOUND') return 'Không tìm thấy phiên đặt hàng của bạn. Có thể bạn đã đổi tài khoản hoặc phiên guest hết hạn; hãy tra cứu đơn qua email.'
+  if (code === 'CHECKOUT_BUSY') return 'Yêu cầu đang được xử lý. Kiểm tra kết quả hoặc thử lại với cùng yêu cầu.'
+  if (code === 'IDEMPOTENCY_PAYLOAD_MISMATCH') return 'Yêu cầu trước đã tạo đơn với thông tin khác. Kiểm tra kết quả đặt hàng trước khi tiếp tục.'
+  if (code === 'CHECKOUT_SESSION_LIMIT') return 'Bạn đang có nhiều phiên đặt hàng chưa dùng. Dùng lại phiên hiện tại hoặc chờ phiên hết hạn.'
+  if (code === 'INVALID_ORDER_TOKEN') return 'Liên kết không hợp lệ, đã sử dụng hoặc hết hạn, hoặc tài khoản chưa khớp email đặt hàng. Hãy yêu cầu liên kết mới.'
+  if (code === 'GUEST_ACCESS_REQUIRED') return 'Phiên xem đơn đã hết hạn hoặc đơn đã được nhận vào tài khoản. Mở liên kết email hoặc yêu cầu liên kết mới.'
+  if (code === 'CONSENT_REQUIRED') return 'Đơn này chưa đồng ý nhận hướng dẫn tạo tài khoản. Bạn vẫn có thể chủ động đăng ký và xác minh để nhận quyền đơn.'
+  if (code === 'CART_STORAGE_INVALID') return 'Không thể đọc hoặc lưu giỏ hàng. Kiểm tra quyền lưu trữ hoặc xóa giỏ để khôi phục.'
+  if (code === 'PRICE_CHANGED') return 'Giá hoặc phí đã thay đổi. Vui lòng xem và xác nhận báo giá mới.'
+  if (code === 'OUT_OF_STOCK') return 'Số lượng trong giỏ vượt lượng còn hàng. Giảm số lượng và tính lại báo giá.'
+  if (code === 'VARIANT_UNAVAILABLE') return 'Có phiên bản không còn được bán. Xóa phiên bản đó và tính lại báo giá.'
+  if (code === 'SHIPPING_UNAVAILABLE') return 'Chưa thể tính phí giao hàng. Vui lòng thử lại sau.'
+  if (code === 'QUOTE_LIMIT') return 'Giá trị giỏ hàng vượt giới hạn số tiền được hỗ trợ.'
   if (code === 'OPERATION_KEY_CONFLICT') return 'Mã thao tác đã dùng với nội dung khác. Kiểm tra lịch sử trước khi tạo thao tác mới.'
   if (code === 'INSUFFICIENT_AVAILABLE') return 'Không thể giảm quá lượng khả dụng. Tải lại kho và kiểm tra lượng đã giữ.'
   if (code === 'INVENTORY_LIMIT') return 'Số lượng trong kho vượt giới hạn 2147483647.'

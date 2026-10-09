@@ -21,7 +21,7 @@ async function openStock(page: Page) {
 }
 async function write(page: Page, delta: string, reason: string, kind: 'receive' | 'adjust' = 'receive') {
   await page.getByLabel('Loại thao tác').selectOption(kind)
-  await page.getByLabel('Số lượng thay đổi').fill(delta)
+  await page.getByLabel('Số lượng thay đổi', { exact: true }).fill(delta)
   await page.getByLabel('Lý do', { exact: true }).fill(reason)
   await page.getByRole('button', { name: 'Ghi thao tác kho', exact: true }).click()
 }

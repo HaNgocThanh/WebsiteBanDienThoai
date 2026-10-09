@@ -64,7 +64,7 @@ async function execute<T>(path: string, decode: Decoder<T>, options: RequestOpti
     try { return decode(payload) }
     catch { throw new ApiError(response.status, 'INVALID_RESPONSE') }
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401 && path !== '/api/v1/auth/session' && path !== '/api/v1/auth/login') window.dispatchEvent(new Event('auth-session-invalid'))
+    if (error instanceof ApiError && error.status === 401 && path !== '/api/v1/auth/session' && path !== '/api/v1/auth/login' && !path.startsWith('/api/v1/guest/')) window.dispatchEvent(new Event('auth-session-invalid'))
     if (options.signal?.aborted) throw new DOMException('Request aborted', 'AbortError')
     if (timedOut) throw new ApiError(0, 'TIMEOUT')
     if (error instanceof ApiError) throw error

@@ -12,6 +12,7 @@ public sealed class CatalogController(CatalogService catalog, ICatalogImageStore
     [HttpGet("categories")] public async Task<IActionResult> Categories(CancellationToken ct) => Ok(await catalog.CategoriesAsync(false, ct));
     [HttpGet("products")] public async Task<IActionResult> Products([FromQuery] CatalogQuery query, CancellationToken ct) => Ok(await catalog.ProductsAsync(query, ct));
     [HttpGet("products/{slug}")] public async Task<IActionResult> Product(string slug, CancellationToken ct) => Ok(await catalog.ProductAsync(slug, ct));
+    [HttpGet("catalog/variants")] public async Task<IActionResult> CartVariants([FromQuery] string[] variantIds, CancellationToken ct) => Ok(await catalog.CartVariantsAsync(variantIds, ct));
     [HttpGet("catalog-images/{name}")]
     public async Task<IActionResult> Image(string name, CancellationToken ct)
     {

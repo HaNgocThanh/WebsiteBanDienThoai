@@ -1,4 +1,4 @@
-param()
+param([ValidateRange(1024,65535)][int]$ApiPort = 5080, [ValidateRange(1024,65535)][int]$WebPort = 5175, [ValidateSet('Debug','Release')][string]$Configuration = 'Debug')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $runId = [Guid]::NewGuid().ToString('N')
@@ -8,6 +8,9 @@ $previousConnection = $env:ConnectionStrings__DefaultConnection
 $previousSql = $env:PHONESTORE_E2E_SQL
 $previousMailbox = $env:PHONESTORE_E2E_MAILBOX
 $previousImages = $env:PHONESTORE_E2E_IMAGES
+$previousApiPort = $env:PHONESTORE_E2E_API_PORT
+$previousWebPort = $env:PHONESTORE_E2E_WEB_PORT
+$previousBuild = $env:PHONESTORE_E2E_CONFIGURATION
 $images = Join-Path ([IO.Path]::GetTempPath()) ('PhoneStore_Test_Images_' + $runId)
 $previousLogLevel = $env:Logging__LogLevel__Default
 $created = $false
@@ -17,6 +20,9 @@ function Invoke-TestSql([string]$query) {
 }
 Push-Location $repoRoot
 try {
+    $env:PHONESTORE_E2E_API_PORT = [string]$ApiPort
+    $env:PHONESTORE_E2E_WEB_PORT = [string]$WebPort
+    $env:PHONESTORE_E2E_CONFIGURATION = $Configuration
     if ($database -notmatch '^PhoneStore_Test_[0-9a-f]{32}$') { throw 'Unsafe test DB name.' }
     $line = Get-Content -LiteralPath (Join-Path $repoRoot '.env') | Where-Object { $_ -match '^MSSQL_SA_PASSWORD=' } | Select-Object -First 1
     if (!$line) { throw 'Missing local SQL password configuration.' }
@@ -27,7 +33,7 @@ try {
     $created = $true
     Push-Location backend
     try {
-        dotnet ef database update --project PhoneStore.Api --no-color
+        dotnet ef database update --project PhoneStore.Api --configuration $Configuration --no-color
         if ($LASTEXITCODE -ne 0) { throw 'Test migration failed.' }
     } finally { Pop-Location }
     New-Item -ItemType Directory -Path $mailbox | Out-Null
@@ -42,6 +48,9 @@ try {
     $env:PHONESTORE_E2E_SQL = $previousSql
     $env:PHONESTORE_E2E_MAILBOX = $previousMailbox
     $env:PHONESTORE_E2E_IMAGES = $previousImages
+    $env:PHONESTORE_E2E_API_PORT = $previousApiPort
+    $env:PHONESTORE_E2E_WEB_PORT = $previousWebPort
+    $env:PHONESTORE_E2E_CONFIGURATION = $previousBuild
     $env:Logging__LogLevel__Default = $previousLogLevel
     if ($created) { Invoke-TestSql "ALTER DATABASE [$database] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$database];" }
     $resolvedMailbox = [IO.Path]::GetFullPath($mailbox)

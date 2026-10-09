@@ -42,6 +42,20 @@ public sealed partial class CatalogService(AppDbContext db)
         await transaction.CommitAsync(ct); return result;
     }
     private IQueryable<Product> VisibleProducts() => db.Products.AsNoTracking().Where(x => x.IsActive && x.Brand.IsActive && x.Category.IsActive && x.Variants.Any(v => v.IsActive));
+    public async Task<IReadOnlyList<CartVariantDto>> CartVariantsAsync(string[] variantIds, CancellationToken ct)
+    {
+        if (variantIds.Length is < 1 or > 100 || variantIds.Any(id => !ApiContract.TryParseId(id, out _)))
+            throw new CatalogException(400, "VALIDATION_ERROR", "Cần từ 1 đến 100 mã phiên bản hợp lệ.");
+        var ids = variantIds.Select(id => long.Parse(id, System.Globalization.CultureInfo.InvariantCulture)).Distinct().ToArray();
+        var rows = await db.ProductVariants.AsNoTracking().Where(v => ids.Contains(v.Id) && v.IsActive && v.Product.IsActive && v.Product.Brand.IsActive && v.Product.Category.IsActive)
+            .OrderBy(v => v.Id).Select(v => new {
+                v.Id, ProductName = v.Product.Name, ProductSlug = v.Product.Slug, v.Sku, v.Color, v.StorageGb, v.RamGb,
+                Image = v.Product.Images.Where(i => i.VariantId == v.Id || i.VariantId == null)
+                    .OrderBy(i => i.VariantId == v.Id ? 0 : 1).ThenBy(i => i.SortOrder).ThenBy(i => i.Id)
+                    .Select(i => new { i.ImageUrl, i.AltText }).FirstOrDefault()
+            }).ToListAsync(ct);
+        return rows.Select(v => new CartVariantDto(ApiContract.Id(v.Id), v.ProductName, v.ProductSlug, v.Sku, v.Color, v.StorageGb, v.RamGb, v.Image?.ImageUrl, v.Image?.AltText)).ToArray();
+    }
     private IQueryable<ProductVariant> MatchingVariants(CatalogQuery query, bool admin) => db.ProductVariants.AsNoTracking().Where(v => (admin || v.IsActive)
         && (query.MinPrice == null || v.Price >= query.MinPrice) && (query.MaxPrice == null || v.Price <= query.MaxPrice)
         && (query.StorageGb == null || v.StorageGb == query.StorageGb) && (query.RamGb == null || v.RamGb == query.RamGb)

@@ -12,6 +12,10 @@ import { AdminLookupsPage, AdminProductsPage } from './pages/AdminCatalogList'
 import { AdminProductPage } from './pages/AdminCatalogProduct'
 import { AdminInventoryDetailPage, AdminInventoryPage } from './pages/AdminInventory'
 import { StoreProductPage, StoreProductsPage } from './pages/StoreCatalog'
+import { CartProvider } from './cart/CartProvider'
+import { CartPage } from './pages/CartPage'
+import { CheckoutPage, CheckoutSuccessPage } from './pages/CheckoutPage'
+import { GuestAccessPage, GuestLookupPage, GuestOrderPage } from './pages/GuestOrders'
 
 function RouteAccessibility() {
   const { pathname, search } = useLocation()
@@ -29,12 +33,17 @@ function RouteAccessibility() {
 }
 
 export default function App() {
-  return <AuthProvider><RouteAccessibility /><Routes>
+  return <AuthProvider><CartProvider><RouteAccessibility /><Routes>
     <Route element={<StorefrontLayout />}>
       <Route index element={<HomePage />} />
       <Route path="products" element={<StoreProductsPage />} />
       <Route path="products/:slug" element={<StoreProductPage />} />
-      <Route path="cart" element={<ComingSoonPage title="Giỏ hàng" message="Không gian giỏ hàng sẽ sớm có mặt." />} />
+      <Route path="cart" element={<CartPage />} />
+      <Route path="checkout" element={<CheckoutPage />} />
+      <Route path="checkout/success" element={<CheckoutSuccessPage />} />
+      <Route path="guest/lookup" element={<GuestLookupPage />} />
+      <Route path="guest/access" element={<GuestAccessPage />} />
+      <Route path="guest/order" element={<GuestOrderPage />} />
       <Route element={<AuthGuard />}><Route path="account" element={<AccountPage />} /></Route>
       {(['login', 'register', 'forgot-password', 'resend-verification', 'verify-email', 'reset-password'] as const).map(kind => <Route key={kind} path={`auth/${kind}`} element={<AuthPage key={kind} kind={kind} />} />)}
       <Route path="health" element={<HealthPage />} />
@@ -52,5 +61,5 @@ export default function App() {
       <Route path="orders" element={<ComingSoonPage title="Đơn hàng" message="Công cụ quản lý đơn hàng sẽ sớm có mặt." />} />
       <Route path="*" element={<NotFoundPage admin />} />
     </Route></Route>
-  </Routes></AuthProvider>
+  </Routes></CartProvider></AuthProvider>
 }

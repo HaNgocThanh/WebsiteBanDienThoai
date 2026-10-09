@@ -27,6 +27,7 @@ export async function setupAdmin(browser: Browser) {
   let mail: { UserId: string; Token: string } | undefined
   await expect.poll(async () => {
     for (const file of await readdir(process.env.PHONESTORE_E2E_MAILBOX!)) {
+      if (!file.endsWith('.json')) continue
       const m: unknown = JSON.parse(await readFile(path.join(process.env.PHONESTORE_E2E_MAILBOX!, file), 'utf8'))
       if (typeof m === 'object' && m !== null && 'Email' in m && m.Email === email && 'Purpose' in m && m.Purpose === 'verify-email' && 'UserId' in m && typeof m.UserId === 'string' && 'Token' in m && typeof m.Token === 'string') mail = { UserId: m.UserId, Token: m.Token }
     }
@@ -37,7 +38,7 @@ export async function setupAdmin(browser: Browser) {
   await page.getByRole('button', { name: 'Xác minh email', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('Email đã được xác minh')
   // Same documented bootstrap CLI as a local Admin, with an isolated DB and synthetic user only.
-  try { await promisify(execFile)('dotnet', ['run', '--project', '../backend/PhoneStore.Api', '--no-launch-profile', '--no-build', '--', '--bootstrap-auth'], { env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development', ConnectionStrings__DefaultConnection: process.env.PHONESTORE_E2E_SQL, Auth__BootstrapAdminEmail: email, Logging__LogLevel__Default: 'Warning' }, timeout: 60000, windowsHide: true }) }
+  try { await promisify(execFile)('dotnet', ['run', '--project', '../backend/PhoneStore.Api', '--configuration', process.env.PHONESTORE_E2E_CONFIGURATION ?? 'Debug', '--no-launch-profile', '--no-build', '--', '--bootstrap-auth'], { env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development', ConnectionStrings__DefaultConnection: process.env.PHONESTORE_E2E_SQL, Auth__BootstrapAdminEmail: email, Logging__LogLevel__Default: 'Warning' }, timeout: 60000, windowsHide: true }) }
   catch { throw new Error('Synthetic Admin bootstrap CLI failed; private process output withheld.') }
   await login(page, email); const state = await context.storageState(); await context.close(); return state
 }

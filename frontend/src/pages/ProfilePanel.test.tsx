@@ -1,4 +1,5 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { mockLocations } from '../test/locationFixtures'
+import { beforeEach, afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AuthContext } from '../auth/AuthContext'
 import { ApiError } from '../services/errors'
@@ -10,7 +11,8 @@ vi.mock('../services/profile', () => ({
   getAddresses: vi.fn(async () => [{ id: '1', recipientName: 'Original', phone: '0', addressLine: 'Synthetic', locality: null, province: 'Test', countryCode: 'VN', isDefault: true }]),
   updateProfile: vi.fn(), saveAddress: vi.fn(), deleteAddress: vi.fn(),
 }))
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+beforeEach(mockLocations)
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks() })
 function mount() { render(<AuthContext.Provider value={{ status: 'authenticated', refresh: vi.fn(async () => null), clear: vi.fn() }}><ProfilePanel /></AuthContext.Provider>) }
 
 test('profile pending submit is locked and failure preserves input without success', async () => {
@@ -35,6 +37,11 @@ test('failed address save or delete preserves saved address and default', async 
   mount(); await screen.findByRole('button', { name: 'Sửa Original' })
   fireEvent.click(screen.getByRole('button', { name: 'Sửa Original' }))
   fireEvent.change(screen.getByLabelText('Người nhận'), { target: { value: 'Rejected' } })
+  await screen.findByRole('option', { name: 'Thành phố Hồ Chí Minh' })
+  await waitFor(() => expect(screen.getByLabelText('Tỉnh/thành phố').closest('fieldset')!.disabled).toBe(false))
+  fireEvent.change(screen.getByLabelText('Tỉnh/thành phố'), { target: { value: '79' } })
+  await screen.findByRole('option', { name: 'Phường Synthetic' })
+  fireEvent.change(screen.getByLabelText('Phường/xã'), { target: { value: '26734' } })
   fireEvent.submit(screen.getByRole('button', { name: 'Lưu địa chỉ' }).closest('form')!)
   await screen.findByRole('alert')
   expect(screen.getByRole('button', { name: 'Sửa Original' })).toBeTruthy()
