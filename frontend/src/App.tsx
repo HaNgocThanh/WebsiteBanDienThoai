@@ -1,10 +1,12 @@
+import { AdminAccountPage } from './pages/AdminAccount'
+import { OrderListPage, OrderDetailPage, NotificationsPage } from './pages/OrderManagement'
 import { useEffect, useRef } from 'react'
 import { Route, Routes, useLocation } from 'react-router'
 import { StorefrontLayout } from './layouts/StorefrontLayout'
 import { AdminLayout } from './layouts/AdminLayout'
 import { HomePage } from './pages/HomePage'
 import { HealthPage } from './pages/HealthPage'
-import { AdminOverviewPage, ComingSoonPage, NotFoundPage } from './pages/FoundationPages'
+import { AdminOverviewPage, NotFoundPage } from './pages/FoundationPages'
 import { AuthGuard, AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/AuthContext'
 import { AccountPage, AuthPage } from './pages/AuthPages'
@@ -44,13 +46,13 @@ export default function App() {
       <Route path="guest/lookup" element={<GuestLookupPage />} />
       <Route path="guest/access" element={<GuestAccessPage />} />
       <Route path="guest/order" element={<GuestOrderPage />} />
-      <Route element={<AuthGuard />}><Route path="account" element={<AccountPage />} /></Route>
+      <Route element={<AuthGuard />}><Route path="account" element={<AccountPage />} /><Route path="account/orders" element={<OrderListPage />} /><Route path="account/orders/:id" element={<OrderDetailPage />} /><Route path="account/notifications" element={<NotificationsPage />} /></Route>
       {(['login', 'register', 'forgot-password', 'resend-verification', 'verify-email', 'reset-password'] as const).map(kind => <Route key={kind} path={`auth/${kind}`} element={<AuthPage key={kind} kind={kind} />} />)}
       <Route path="health" element={<HealthPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Route>
     <Route element={<AuthGuard admin />}><Route path="admin" element={<AdminLayout />}>
-      <Route index element={<AdminOverviewPage />} />
+      <Route index element={<AdminOverviewPage />} /><Route path="account" element={<AdminAccountPage />} />
       <Route path="products" element={<AdminProductsPage />} />
       <Route path="products/new" element={<AdminProductPage />} />
       <Route path="products/:id" element={<AdminProductPage />} />
@@ -58,7 +60,7 @@ export default function App() {
       <Route path="categories" element={<AdminLookupsPage key="categories" kind="categories" />} />
       <Route path="inventory" element={<AdminInventoryPage />} />
       <Route path="inventory/:variantId" element={<AdminInventoryDetailPage />} />
-      <Route path="orders" element={<ComingSoonPage title="Đơn hàng" message="Công cụ quản lý đơn hàng sẽ sớm có mặt." />} />
+      <Route path="orders" element={<OrderListPage admin />} /><Route path="orders/:id" element={<OrderDetailPage admin />} /><Route path="notifications" element={<NotificationsPage admin />} />
       <Route path="*" element={<NotFoundPage admin />} />
     </Route></Route>
   </Routes></CartProvider></AuthProvider>

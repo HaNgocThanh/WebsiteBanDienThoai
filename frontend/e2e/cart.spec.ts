@@ -27,20 +27,15 @@ async function add(page: Page) {
   await page.getByRole('button', { name: 'Thêm vào giỏ hàng', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Đã thêm phiên bản' })).toBeVisible(); await page.getByRole('link', { name: 'Xem giỏ hàng' }).click()
 }
-async function quote(page: Page, province: string) { await selectDestination(page, province === 'Đà Nẵng' ? '48' : '79'); await page.getByRole('button', { name: 'Tính lại báo giá' }).click(); await expect(page.getByRole('heading', { name: 'Báo giá hiện tại' })).toBeVisible() }
 
-test('guest cart survives reload, quotes true HCM/other fees and quantity; SQL stock is unchanged', async ({ page, browser }) => {
+test('guest cart edits quantities without shipping fields or quote; SQL stock is unchanged', async ({ page, browser }) => {
   await add(page)
   await expect(page.locator('.cart-items').getByRole('heading', { name: product.name })).toBeVisible()
   const image = page.locator('.cart-image img'); await expect(image).toHaveAttribute('src', imageUrl)
   await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true)
   await expect(page.locator('.cart-quote')).toHaveCount(0)
-  await quote(page, 'TP. Hồ Chí Minh')
-  await expect(page.locator('.cart-quote')).toContainText('25.000.000'); await expect(page.locator('.cart-quote dl > div').filter({ hasText: 'Phí giao hàng' })).toContainText('0 ₫')
-  await page.getByRole('button', { name: 'Xác nhận báo giá hiện tại' }).click(); await expect(page.getByRole('status').filter({ hasText: 'đã xác nhận' })).toBeVisible()
-  await quote(page, 'Đà Nẵng'); await expect(page.locator('.cart-quote')).toContainText('25.030.000'); await expect(page.getByRole('status').filter({ hasText: 'đã xác nhận' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Tiến hành thanh toán' })).toBeVisible()
   await page.getByRole('spinbutton').fill('2'); await expect(page.locator('.cart-quote')).toHaveCount(0); await page.getByRole('spinbutton').press('Enter')
-  await quote(page, 'Đà Nẵng'); await expect(page.locator('.cart-quote')).toContainText('50.030.000')
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), cartKey)).toEqual([{ variantId: id, quantity: 2 }])
   await page.getByRole('button', { name: /^Tăng số lượng / }).click()
   await page.getByRole('spinbutton').press('Enter')
@@ -48,11 +43,8 @@ test('guest cart survives reload, quotes true HCM/other fees and quantity; SQL s
   await page.getByRole('spinbutton').press('ArrowDown')
   await page.getByRole('spinbutton').press('Enter')
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), cartKey)).toEqual([{ variantId: id, quantity: 2 }])
-  await page.getByLabel('Tỉnh/thành phố', { exact: true }).selectOption('79')
-  await expect(page.getByLabel('Phường/xã')).toHaveValue('')
   await page.reload(); await expect(page.getByRole('spinbutton')).toHaveValue('2'); await expect(page.locator('.cart-quote')).toHaveCount(0)
   await expect(page.locator('.cart-items').getByRole('heading', { name: product.name })).toBeVisible(); await expect(page.locator('.cart-image img')).toHaveAttribute('src', imageUrl)
-  await quote(page, 'Đà Nẵng')
   for (const width of [360, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     const remove = page.locator('.cart-remove'), heading = page.locator('.cart-item-heading h2')
@@ -62,42 +54,42 @@ test('guest cart survives reload, quotes true HCM/other fees and quantity; SQL s
     await remove.hover(); await expect(remove).toHaveCSS('background-color', 'rgb(197, 43, 54)')
     await page.screenshot({ path: path.resolve('../docs/agent-kit/tasks', `P3-01-cart-${width}.png`), fullPage: true })
   }
-  await page.getByLabel('Phường/xã').focus(); await page.keyboard.press('Tab'); await expect(page.getByRole('button', { name: 'Tính lại báo giá' })).toBeFocused()
+  await expect(page.getByRole('heading', { name: 'Giao hàng' })).toHaveCount(0); await expect(page.getByLabel('Số nhà, đường')).toHaveCount(0); await page.getByRole('link', { name: 'Tiến hành thanh toán' }).focus(); await expect(page.getByRole('link', { name: 'Tiến hành thanh toán' })).toBeFocused()
   const context = await browser.newContext({ storageState: state }); const admin = await context.newPage(); await admin.goto('/')
   const stock = await (await admin.request.get('/api/v1/admin/inventory/' + id)).json() as { onHand: number; reserved: number; available: number }
   expect(stock).toMatchObject({ onHand: 5, reserved: 0, available: 5 }); await context.close()
   await page.locator('.cart-remove').click(); await expect(page.getByRole('heading', { name: 'Giỏ hàng đang trống' })).toBeVisible()
 })
 
-test('real Admin price update forces PRICE_CHANGED and explicit new confirmation', async ({ page, browser }) => {
-  await add(page); await quote(page, 'Hồ Chí Minh'); await page.getByRole('button', { name: 'Xác nhận báo giá hiện tại' }).click()
+test('checkout fetches latest Admin price after cart, with confirmation unchecked', async ({ page, browser }) => {
+  await add(page)
   const context = await browser.newContext({ storageState: state }); const admin = await context.newPage(); await admin.goto('/')
   const productDto = await (await admin.request.get('/api/v1/admin/products/' + product.id)).json() as { variants: { id: string; sku: string; color: string; storageGb: number; ramGb: number; price: number; isActive: boolean; version: string }[] }
   const v = productDto.variants[0], token = (await (await admin.request.get('/api/v1/auth/csrf')).json() as { token: string }).token
   const response = await admin.request.patch('/api/v1/admin/variants/' + id, { data: { sku: v.sku, color: v.color, storageGb: v.storageGb, ramGb: v.ramGb, price: 24000000, isActive: v.isActive }, headers: { 'X-CSRF-TOKEN': token, 'If-Match': '"' + v.version + '"' } }); expect(response.status()).toBe(200); await context.close()
-  const conflict = page.waitForResponse(r => r.url().endsWith('/checkout/quote') && r.status() === 409)
-  await page.getByRole('button', { name: 'Tính lại báo giá' }).click(); expect((await (await conflict).json() as { code: string }).code).toBe('PRICE_CHANGED')
-  await expect(page.getByText('Giá hoặc phí đã thay đổi. Xem báo giá mới và xác nhận lại.')).toBeVisible(); await expect(page.locator('.cart-quote')).toContainText('24.000.000'); await expect(page.getByRole('status').filter({ hasText: 'đã xác nhận' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Xác nhận báo giá hiện tại' }).click(); await expect(page.getByRole('status').filter({ hasText: 'đã xác nhận' })).toBeVisible()
+  await page.getByRole('link', { name: 'Tiến hành thanh toán' }).click(); await expect(page).toHaveURL(new RegExp("/checkout$"))
+  await page.getByLabel('Họ tên người nhận', { exact: true }).fill('Synthetic recipient'); await page.getByLabel('Số điện thoại', { exact: true }).fill('0000000000'); await page.getByLabel('Email nhận đơn', { exact: true }).fill('synthetic-' + randomUUID() + '@example.invalid')
+  await selectDestination(page, '79'); await page.getByRole('button', { name: 'Tính báo giá', exact: true }).click()
+  await expect(page.locator('.checkout-summary')).toContainText('24.000.000'); await expect(page.getByLabel('Tôi xác nhận sản phẩm, số lượng và tổng tiền trên.')).not.toBeChecked()
+
 })
 
-test('stored price/tier tamper is stripped, network retry and out-of-stock never falsely confirm', async ({ page }) => {
-  await page.goto('/'); await page.evaluate(({ key, variantId }) => localStorage.setItem(key, JSON.stringify([{ variantId, quantity: 1, unitPrice: 0, tier: 'Diamond' }])), { key: cartKey, variantId: id }); await page.goto('/cart')
-  let body: unknown
-  await page.route('**/api/v1/checkout/quote', async route => { body = route.request().postDataJSON() as unknown; await route.abort('failed') })
-  await selectDestination(page, '01'); await page.getByRole('button', { name: 'Tính lại báo giá' }).click(); await expect(page.getByRole('alert')).toContainText('Không thể kết nối'); await expect(page.locator('.cart-quote')).toHaveCount(0)
-  expect(body).toMatchObject({ items: [{ variantId: id, quantity: 1 }], shippingAddress: { provinceCode: '01', province: 'Thành phố Hà Nội', addressLine: 'Synthetic street', countryCode: 'VN' } })
-  await page.unroute('**/api/v1/checkout/quote'); await page.getByRole('button', { name: 'Tính lại báo giá' }).click(); await expect(page.locator('.cart-quote')).toContainText('24.030.000')
-  await page.getByRole('spinbutton').fill('6'); await page.getByRole('spinbutton').press('Enter'); await page.getByRole('button', { name: 'Tính lại báo giá' }).click()
-  await expect(page.getByRole('alert')).toContainText('vượt lượng còn hàng'); await expect(page.getByRole('button', { name: 'Xác nhận báo giá hiện tại' })).toHaveCount(0)
+test('display network failure retries; cart tampered prices are never used or sent to quote', async ({ page }) => {
+  await page.goto('/'); await page.evaluate(({ key, variantId }) => localStorage.setItem(key, JSON.stringify([{ variantId, quantity: 1, unitPrice: 0, tier: 'Diamond' }])), { key: cartKey, variantId: id })
+  let quoteCalls = 0; page.on('request', request => { if (request.url().endsWith('/checkout/quote')) quoteCalls++ })
+  await page.route('**/api/v1/catalog/variants?*', route => route.abort('failed')); await page.goto('/cart')
+  await expect(page.getByRole('button', { name: 'Tải lại thông tin sản phẩm' })).toBeVisible(); await page.unroute('**/api/v1/catalog/variants?*'); await page.getByRole('button', { name: 'Tải lại thông tin sản phẩm' }).click()
+  await expect(page.locator('.cart-items').getByRole('heading', { name: product.name })).toBeVisible()
+  expect(quoteCalls).toBe(0); await expect(page.getByRole('heading', { name: 'Giao hàng' })).toHaveCount(0)
+  await page.getByRole('spinbutton').fill('6'); await page.getByRole('spinbutton').press('Enter')
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), cartKey)).toEqual([{ variantId: id, quantity: 6 }])
 })
 
-test('another tab updating or corrupting cart invalidates the confirmed quote and offers recovery', async ({ page, context }) => {
-  await add(page); await quote(page, 'HCM'); await page.getByRole('button', { name: 'Xác nhận báo giá hiện tại' }).click()
+test('another tab updates cart quantities and corrupt storage blocks checkout until recovery', async ({ page, context }) => {
+  await add(page)
   const other = await context.newPage(); await other.goto('/health')
   await other.evaluate(({ key, variantId }) => localStorage.setItem(key, JSON.stringify([{ variantId, quantity: 2 }])), { key: cartKey, variantId: id })
   await expect(page.getByRole('spinbutton')).toHaveValue('2'); await expect(page.locator('.cart-quote')).toHaveCount(0)
-  await quote(page, 'HCM'); await expect(page.locator('.cart-quote')).toContainText('48.000.000'); await expect(page.getByRole('status').filter({ hasText: 'đã xác nhận' })).toHaveCount(0)
   await other.evaluate(key => localStorage.setItem(key, '{broken'), cartKey)
   await expect(page.getByRole('alert')).toContainText('Không thể đọc hoặc lưu giỏ hàng'); await expect(page.locator('.cart-quote')).toHaveCount(0)
   await page.getByRole('button', { name: 'Xóa giỏ để khôi phục' }).click(); await expect(page.getByRole('heading', { name: 'Giỏ hàng đang trống' })).toBeVisible(); expect(await page.evaluate(key => localStorage.getItem(key), cartKey)).toBe('[]'); await other.close()

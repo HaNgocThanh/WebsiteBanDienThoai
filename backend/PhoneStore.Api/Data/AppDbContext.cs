@@ -37,6 +37,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<PromotionCustomerTier> PromotionCustomerTiers => Set<PromotionCustomerTier>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<OrderInternalNote> OrderInternalNotes => Set<OrderInternalNote>();
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<OrderCancellationRequest> OrderCancellationRequests => Set<OrderCancellationRequest>();
     public DbSet<OrderAccountConsent> OrderAccountConsents => Set<OrderAccountConsent>();
@@ -84,6 +85,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigurePromotionCustomerTier(modelBuilder.Entity<PromotionCustomerTier>());
         ConfigureOrder(modelBuilder.Entity<Order>());
         ConfigureOrderItem(modelBuilder.Entity<OrderItem>());
+        ConfigureOrderInternalNote(modelBuilder.Entity<OrderInternalNote>());
         ConfigureOrderStatusHistory(modelBuilder.Entity<OrderStatusHistory>());
         ConfigureOrderCancellationRequest(modelBuilder.Entity<OrderCancellationRequest>());
         ConfigureOrderAccountConsent(modelBuilder.Entity<OrderAccountConsent>());
@@ -506,6 +508,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             .HasForeignKey(x => x.VariantId).OnDelete(DeleteBehavior.NoAction);
         entity.HasOne(x => x.Promotion).WithMany()
             .HasForeignKey(x => x.PromotionId).OnDelete(DeleteBehavior.NoAction);
+    }
+
+    private static void ConfigureOrderInternalNote(EntityTypeBuilder<OrderInternalNote> entity)
+    {
+        entity.ToTable("OrderInternalNotes", t => t.HasCheckConstraint("CK_OrderInternalNotes_Text", "LEN(LTRIM(RTRIM([Text]))) > 0"));
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Id).UseIdentityColumn();
+        entity.Property(x => x.Text).HasMaxLength(500).IsUnicode().IsRequired();
+        entity.Property(x => x.CreatedAt).HasColumnType("datetime2(3)").HasConversion(UtcConverter).HasDefaultValueSql("SYSUTCDATETIME()");
+        entity.HasIndex(x => new { x.OrderId, x.ActorUserId, x.OperationKey }).IsUnique();
+        entity.HasIndex(x => new { x.OrderId, x.CreatedAt });
+        entity.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.NoAction);
+        entity.HasOne(x => x.ActorUser).WithMany().HasForeignKey(x => x.ActorUserId).OnDelete(DeleteBehavior.NoAction);
     }
 
     private static void ConfigureOrderStatusHistory(EntityTypeBuilder<OrderStatusHistory> entity)

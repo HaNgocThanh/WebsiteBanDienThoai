@@ -1,3 +1,4 @@
+import { NotificationLink } from '../components/NotificationLink'
 import { useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router'
@@ -38,11 +39,12 @@ export function StorefrontLayout() {
           <TextField label="Tìm điện thoại" visuallyHiddenLabel type="search" placeholder="Bạn đang tìm điện thoại nào?" value={search} error={error} onChange={event => { setSearch(event.target.value); setError(undefined) }} />
           <button type="submit" aria-label="Tìm kiếm" className="search-button">↗</button>
         </form>
-        <div className="header-actions"><Link to="/cart" className="cart-link">Giỏ hàng <span aria-hidden="true">↗</span></Link><Link to={auth.user ? '/account' : '/auth/login'} className="button button-small button-outline">{auth.user ? 'Tài khoản' : 'Đăng nhập'}</Link></div>
+        <div className="header-actions"><Link to="/cart" className="cart-link">Giỏ hàng <span aria-hidden="true">↗</span></Link><Link to={auth.user?.roles.includes('Admin') ? '/admin' : auth.user ? '/account' : '/auth/login'} className="button button-small button-outline">{auth.user?.roles.includes('Admin') ? 'Quản trị' : auth.user ? 'Tài khoản' : 'Đăng nhập'}</Link></div>
         <button ref={menuButton} className="menu-button" aria-expanded={open} aria-controls="store-nav" aria-label={open ? 'Đóng menu' : 'Mở menu'} onClick={() => setOpen(!open)}>{open ? '✕' : '☰'}</button>
       </div>
       <nav id="store-nav" className={`store-nav ${open ? 'is-open' : ''}`} aria-label="Điều hướng cửa hàng">
         <NavLink to="/" end onClick={() => setOpen(false)}>Trang chủ</NavLink><NavLink to="/products" onClick={() => setOpen(false)}>Điện thoại</NavLink><NavLink to="/account" onClick={() => setOpen(false)}>Tài khoản</NavLink>
+        {auth.user && <NavLink to="/account/orders" onClick={() => setOpen(false)}>Đơn hàng của tôi</NavLink>}<NotificationLink />
         <NavLink to="/guest/lookup" onClick={() => setOpen(false)}>Tra cứu đơn</NavLink>
         <Link to="/health" className="nav-utility" onClick={() => setOpen(false)}>Trạng thái kết nối <span aria-hidden="true">↗</span></Link>
       </nav>

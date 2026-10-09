@@ -21,6 +21,8 @@ export class ApiError extends Error {
 }
 
 function errorMessage(status: number, code: string): string {
+  if (code === 'INVALID_FILTER') return 'Bộ lọc không hợp lệ. Kiểm tra ngày, trạng thái và ID khách hàng.'
+  if (code === 'OPERATION_KEY_MISMATCH') return 'Yêu cầu này đã được dùng cho nội dung khác. Vui lòng kiểm tra lại.'
   if (code === 'CHECKOUT_STORAGE_UNAVAILABLE') return 'Không thể lưu hoặc đọc phiên đặt hàng. Kiểm tra quyền lưu trữ trình duyệt; nếu đã gửi yêu cầu, hãy tra cứu đơn qua email trước khi đặt lại.'
   if (code === 'CHECKOUT_NOT_COMPLETED') return 'Chưa có đơn được ghi nhận cho phiên này. Bạn có thể quay lại đặt hàng bằng cùng phiên.'
   if (code === 'CHECKOUT_EXPIRED') return 'Phiên đặt hàng chưa dùng đã hết hạn. Tính lại báo giá và xác nhận để đặt hàng.'

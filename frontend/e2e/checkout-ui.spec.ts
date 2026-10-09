@@ -19,7 +19,7 @@ test.beforeAll(async ({ browser }) => {
   expect((await post(page, `admin/inventory/${variantId}/receipts`, { quantity: 40, reason: 'Synthetic checkout UI', operationKey: randomUUID() })).status()).toBe(201); await context.close()
 })
 async function start(page: Page, email?: string, province = '79', suffix = product.suffix) {
-  await page.goto('/products/phone-' + suffix); await page.getByRole('button', { name: 'Thêm vào giỏ hàng', exact: true }).click(); await page.getByRole('link', { name: 'Xem giỏ hàng' }).click(); await page.getByRole('link', { name: 'Tiến hành đặt hàng' }).click()
+  await page.goto('/products/phone-' + suffix); await page.getByRole('button', { name: 'Thêm vào giỏ hàng', exact: true }).click(); await page.getByRole('link', { name: 'Xem giỏ hàng' }).click(); await page.getByRole('link', { name: 'Tiến hành thanh toán' }).click()
   await page.getByLabel('Họ tên người nhận', { exact: true }).fill('Synthetic recipient'); await page.getByLabel('Số điện thoại', { exact: true }).fill('0000000000')
   if (email) await page.getByLabel('Email nhận đơn', { exact: true }).fill(email)
   await selectDestination(page, province)

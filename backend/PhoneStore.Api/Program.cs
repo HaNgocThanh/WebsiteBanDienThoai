@@ -77,6 +77,7 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SameSite = SameSiteMode.Strict;
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
 });
+builder.Services.AddScoped<PhoneStore.Api.Services.OrderManagement.OrderReadService>();
 builder.Services.AddScoped<AuthBootstrap>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.ProfileService>();

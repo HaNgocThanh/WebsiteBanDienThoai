@@ -69,7 +69,7 @@ export function AuthPage({ kind }: { kind: Kind }) {
       if (kind === 'login') {
         const session = await auth.refresh()
         if (!session) throw new ApiError(401, 'UNAUTHENTICATED')
-        navigate(safeReturnPath(search.get('returnTo')), { replace: true })
+        navigate(search.get('returnTo') ? safeReturnPath(search.get('returnTo')) : session.roles.includes('Admin') ? '/admin' : '/account', { replace: true })
       } else if (kind === 'verify-email') setSuccess('Email đã được xác minh. Bạn có thể đăng nhập.')
       else if (kind === 'reset-password') { auth.clear(); setSuccess('Mật khẩu đã được cập nhật. Vui lòng đăng nhập lại.') }
       else setSuccess(neutral)
@@ -113,5 +113,5 @@ export function AccountPage() {
     catch (failure) { if (!abort.signal.aborted) setError(failure instanceof ApiError ? failure : new ApiError(0, 'NETWORK_ERROR')) }
     finally { lock.current = false; if (!abort.signal.aborted) setBusy(false) }
   }
-  return <section className="page-section"><span className="eyebrow">TÀI KHOẢN</span><h1>Xin chào, {auth.user?.fullName}</h1><div className="health-card">{auth.user?.roles.includes('Admin') && <p><Link className="button button-outline" to="/admin">Vào quản trị</Link></p>}{error && <ErrorNotice error={error} />}<SubmitButton busy={busy} onClick={() => { void logout() }}>{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</SubmitButton></div><ProfilePanel /></section>
+  return <section className="page-section"><span className="eyebrow">TÀI KHOẢN</span><h1>Xin chào, {auth.user?.fullName}</h1><div className="health-card"><p><Link className="button button-outline" to="/account/orders">Đơn hàng của tôi</Link> <Link className="button button-outline" to="/account/notifications">Thông báo</Link></p>{auth.user?.roles.includes('Admin') && <p><Link className="button button-outline" to="/admin">Vào quản trị</Link></p>}{error && <ErrorNotice error={error} />}<SubmitButton busy={busy} onClick={() => { void logout() }}>{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</SubmitButton></div><ProfilePanel /></section>
 }

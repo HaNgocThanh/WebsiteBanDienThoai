@@ -5,7 +5,7 @@ const apiPort = port(process.env.PHONESTORE_E2E_API_PORT, 5080), webPort = port(
 const configuration = process.env.PHONESTORE_E2E_CONFIGURATION ?? 'Debug'
 if (!['Debug', 'Release'].includes(configuration)) throw new Error('Invalid build configuration')
 export default defineConfig({
-  testDir: './e2e', testMatch: ['catalog.spec.ts', 'inventory.spec.ts', 'storefront.spec.ts', 'cart.spec.ts', 'checkout.spec.ts', 'checkout-ui.spec.ts'], workers: 1, retries: 0, forbidOnly: !!process.env.CI,
+  testDir: './e2e', testMatch: ['catalog.spec.ts', 'inventory.spec.ts', 'storefront.spec.ts', 'cart.spec.ts', 'checkout.spec.ts', 'checkout-ui.spec.ts', 'order-management.spec.ts'], workers: 1, retries: 0, forbidOnly: !!process.env.CI,
   use: { baseURL: `http://127.0.0.1:${webPort}`, trace: 'off', screenshot: 'off', video: 'off' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [

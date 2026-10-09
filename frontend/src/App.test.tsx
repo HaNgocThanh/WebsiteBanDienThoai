@@ -60,7 +60,7 @@ test('admin shell is distinct and links to available catalog tools without fake 
   renderAt('/admin')
   expect(await screen.findByRole('navigation', { name: 'Điều hướng quản trị' })).toBeTruthy()
   expect(screen.queryByRole('searchbox')).toBeNull()
-  expect(screen.getByText('Quản lý hãng, danh mục, sản phẩm, phiên bản và ảnh của PhoneStore.')).toBeTruthy()
+  expect(screen.getByText('Quản lý danh mục, tồn kho, đơn hàng và thông báo của cửa hàng.')).toBeTruthy()
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Điều hướng quản trị' })).getByRole('link', { name: 'Danh mục sản phẩm' }))
   expect(screen.getByRole('heading', { level: 1, name: 'Danh mục sản phẩm' })).toBeTruthy()
 })
