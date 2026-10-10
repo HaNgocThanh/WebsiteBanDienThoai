@@ -24,13 +24,23 @@ test('failed public load can retry without losing URL filters', async () => {
   openList(); fireEvent.click(await screen.findByRole('button', { name: 'Thử tải lại' })); await screen.findByText('Không tìm thấy sản phẩm phù hợp')
   expect(products.mock.calls[1][0].toString()).toBe(products.mock.calls[0][0].toString())
 })
-test('variant selection changes actual price, availability and only matching images; description stays text', async () => {
+test('all variant images remain browsable while variant selection changes price, availability and the main photo', async () => {
   const imageUrl = '/api/v1/catalog-images/' + 'a'.repeat(32) + '.png'
   vi.spyOn(storeCatalog, 'product').mockResolvedValue({ id: '1', name: 'Synthetic phone', slug: 'test', description: '<script>alert(1)</script>', specificationsJson: null, brand: lookup, category: lookup, variants: [
     { id: '1', sku: 'A', color: 'Black', storageGb: 128, ramGb: 8, price: 1000000, available: 3 },
     { id: '2', sku: 'B', color: 'White', storageGb: 256, ramGb: 8, price: 2000000, available: 0 },
-  ], images: [{ id: '1', variantId: '2', sortOrder: 0, altText: 'White image', imageUrl }] })
+  ], images: [
+    { id: '1', variantId: '2', sortOrder: 2, altText: 'White image', imageUrl },
+    { id: '2', variantId: null, sortOrder: 0, altText: 'General image', imageUrl },
+    { id: '3', variantId: '1', sortOrder: 1, altText: 'Black image', imageUrl },
+  ] })
   const view = render(<CartProvider><MemoryRouter initialEntries={['/products/test']}><Routes><Route path="/products/:slug" element={<StoreProductPage />} /></Routes></MemoryRouter></CartProvider>)
-  await screen.findByText('Chọn phiên bản để xem giá'); expect(screen.queryAllByRole('radio', { checked: true })).toHaveLength(0); expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' }).matches(':disabled')).toBe(true); expect(screen.queryByAltText('White image')).toBeNull(); expect(view.container.querySelector('script')).toBeNull()
+  await screen.findByText('Chọn phiên bản để xem giá'); expect(screen.queryAllByRole('radio', { checked: true })).toHaveLength(0); expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' }).matches(':disabled')).toBe(true); expect(screen.getByAltText('General image')).toBeTruthy(); expect(view.container.querySelector('script')).toBeNull()
+  const thumbnails = () => screen.getAllByRole('button', { name: /^Xem ảnh / })
+  expect(thumbnails().map(button => button.getAttribute('aria-label'))).toEqual(['Xem ảnh 1: General image', 'Xem ảnh 2: Black image', 'Xem ảnh 3: White image'])
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 3: White image' })); expect(screen.getByAltText('White image')).toBeTruthy(); expect(screen.queryAllByRole('radio', { checked: true })).toHaveLength(0)
+  fireEvent.click(screen.getByRole('radio', { name: 'Black · 128 GB · RAM 8 GB' })); expect(screen.getByAltText('Black image')).toBeTruthy(); expect(screen.getByText('1.000.000 ₫')).toBeTruthy(); expect(thumbnails()).toHaveLength(3)
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 3: White image' })); expect(screen.getByAltText('White image')).toBeTruthy(); expect(screen.getByRole('radio', { name: 'Black · 128 GB · RAM 8 GB' }).matches(':checked')).toBe(true); expect(screen.getByText('1.000.000 ₫')).toBeTruthy()
   fireEvent.click(screen.getByRole('radio', { name: 'White · 256 GB · RAM 8 GB' })); expect(screen.getByText('Hết hàng')).toBeTruthy(); expect(screen.getByText('2.000.000 ₫')).toBeTruthy(); expect(screen.getByAltText('White image')).toBeTruthy()
+  expect(thumbnails()).toHaveLength(3)
 })
