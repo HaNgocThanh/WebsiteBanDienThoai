@@ -182,3 +182,8 @@
     border-right-color: var(--border);
   }
 }
+
+@keyframes catalog-photo-slide { from { opacity: .3; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+.store-main-photo { animation: catalog-photo-slide .24s ease-out; }
+.store-gallery { overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .store-main-photo { animation: none; } }

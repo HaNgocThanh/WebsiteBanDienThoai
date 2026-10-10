@@ -10,6 +10,20 @@ namespace PhoneStore.IntegrationTests;
 public class SchemaTests(SqlFixture fixture)
 {
     [Fact]
+    public async Task System_refund_upgrade_preserves_receipts_and_refuses_lossy_downgrade()
+    {
+        var old = new SqlFixture(); await old.InitializeAtAsync("20261009065602_OrderInternalNotes");
+        try {
+            await using var db = old.CreateContext(); var key = Guid.NewGuid(); var user = new ApplicationUser { Id = key, FullName = "Synthetic upgrade", Email = key + "@example.invalid", NormalizedEmail = key.ToString().ToUpperInvariant() + "@EXAMPLE.INVALID" }; db.Users.Add(user);
+            var order = new Order { OrderNumber = "PS" + key.ToString("N")[..28], CustomerEmail = user.Email, NormalizedCustomerEmail = user.Email.ToUpperInvariant(), RecipientName = "Synthetic", Phone = "0000000000", AddressLine = "Synthetic street", Province = "Synthetic province", Subtotal = 100, GrandTotal = 100, CreatedAt = DateTime.UtcNow };
+            var payment = new Payment { Order = order, Amount = 100, Method = PaymentMethod.BankTransfer, Status = PaymentStatus.Confirmed, CreatedAt = DateTime.UtcNow };
+            var refund = new Refund { Payment = payment, MerchandiseAmount = 50, CreatedByUserId = key, CreatedAt = DateTime.UtcNow, Reason = "Synthetic", EventKey = "SyntheticUpgrade:" + key, RequestHash = new byte[32] }; db.Refunds.Add(refund); await db.SaveChangesAsync();
+            var version = refund.Version.ToArray(); await db.Database.MigrateAsync(); await db.Database.MigrateAsync(); var stored = await db.Refunds.AsNoTracking().SingleAsync(r => r.Id == refund.Id); Assert.Equal(key, stored.CreatedByUserId); Assert.Equal(50, stored.Amount); Assert.Equal(version, stored.Version);
+            db.Refunds.Add(new Refund { PaymentId = payment.Id, MerchandiseAmount = 50, CreatedByUserId = null, CreatedAt = DateTime.UtcNow, Reason = "Synthetic system", EventKey = "SyntheticSystem:" + key, RequestHash = new byte[32] }); await db.SaveChangesAsync();
+            var error = await Assert.ThrowsAsync<SqlException>(() => db.GetService<IMigrator>().MigrateAsync("20261009065602_OrderInternalNotes")); Assert.Equal(51091, error.Number); Assert.Equal(2, await db.Refunds.CountAsync()); Assert.Equal(4, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        } finally { await old.DisposeAsync(); }
+    }
+    [Fact]
     public async Task MigrationsReplayWithoutChangingStoredDataOrModel()
     {
         await using var db = fixture.CreateContext();
@@ -18,11 +32,30 @@ public class SchemaTests(SqlFixture fixture)
         await db.SaveChangesAsync();
         await db.Database.MigrateAsync();
         Assert.True(await db.Brands.AnyAsync(x => x.Name == name));
-        Assert.Equal(3, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Empty(await db.Database.GetPendingMigrationsAsync());
         Assert.False(db.Database.HasPendingModelChanges());
     }
 
+    [Fact]
+    public async Task ImageUploadUpgradePreservesLegacyImagesAndReplaysSafely()
+    {
+        var old = new SqlFixture(); await old.InitializeAtAsync("20261009082433_SystemCreatedRefunds");
+        try
+        {
+            await using var db = old.CreateContext(); var key = Guid.NewGuid(); var slug = key.ToString("N");
+            var user = new ApplicationUser { Id = key, FullName = "Synthetic upload upgrade", Email = key + "@example.invalid", NormalizedEmail = key.ToString().ToUpperInvariant() + "@EXAMPLE.INVALID" };
+            var product = new Product { Name = slug, Slug = slug, Brand = new Brand { Name = slug, Slug = slug }, Category = new Category { Name = slug, Slug = slug } };
+            var image = new ProductImage { Product = product, ImageUrl = "/api/v1/catalog-images/" + slug + ".png", AltText = "Legacy image", SortOrder = 5 };
+            db.Users.Add(user); db.ProductImages.Add(image); await db.SaveChangesAsync();
+            var imageId = image.Id; var version = product.Version.ToArray();
+            await db.Database.MigrateAsync(); await db.Database.MigrateAsync();
+            var stored = await db.ProductImages.AsNoTracking().SingleAsync(x => x.Id == imageId); Assert.Equal(image.ImageUrl, stored.ImageUrl); Assert.Equal("Legacy image", stored.AltText); Assert.Equal(5, stored.SortOrder);
+            Assert.Equal(version, (await db.Products.AsNoTracking().SingleAsync()).Version); Assert.True(await db.Users.AnyAsync(x => x.Id == key)); Assert.Empty(await db.CatalogImageUploads.ToListAsync());
+            Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count()); Assert.False(db.Database.HasPendingModelChanges());
+        }
+        finally { await old.DisposeAsync(); }
+    }
     private async Task<ProductVariant> AddVariant()
     {
         await using var db = fixture.CreateContext();
@@ -110,7 +143,7 @@ public class SchemaTests(SqlFixture fixture)
             await db.Database.ExecuteSqlRawAsync("UPDATE AspNetUserLogins SET LoginProvider='fixture-provider'");
             await db.Database.MigrateAsync();
             Assert.Equal("key", await db.Set<Microsoft.AspNetCore.Identity.IdentityUserLogin<Guid>>().Select(x => x.ProviderKey).SingleAsync());
-            Assert.Equal(3, (await db.Database.GetAppliedMigrationsAsync()).Count());
+            Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
         }
         finally { await old.DisposeAsync(); }
     }
@@ -131,4 +164,3 @@ public class SchemaTests(SqlFixture fixture)
     }
 
 }
-

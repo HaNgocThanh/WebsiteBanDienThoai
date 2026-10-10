@@ -28,7 +28,7 @@ test('Admin creates two variants, edits the intended one, uploads/deletes PNG an
   const dto = await saved.json() as { variants: { id: string; sku: string; price: number }[] }
   expect(dto.variants.find(v => v.sku === sku1)?.price).toBe(24500000)
   expect(dto.variants.find(v => v.sku === sku2)?.price).toBe(26000000)
-  await page.getByLabel('File PNG').setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: png() })
+  await page.getByLabel('File ảnh').setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: png() })
   await page.getByLabel('Ảnh thuộc phiên bản').selectOption({ label: sku2 })
   await page.getByLabel('Mô tả ảnh').fill('Ảnh phiên bản trắng')
   await page.getByRole('button', { name: 'Tải ảnh lên' }).click()
@@ -36,6 +36,9 @@ test('Admin creates two variants, edits the intended one, uploads/deletes PNG an
   const image = page.getByRole('img', { name: 'Ảnh phiên bản trắng' })
   await expect(image).toBeVisible()
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true)
+  const downloaded = page.waitForEvent('download')
+  await page.getByRole('link', { name: 'Tải ảnh Ảnh phiên bản trắng', exact: true }).click()
+  expect((await downloaded).suggestedFilename()).toMatch(/^[0-9a-f]{32}\.png$/)
   for (const width of [360, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -121,4 +124,41 @@ test('Admin filters/pagination persist in URL and parent hide/edit survive reloa
   await page.getByRole('button', { name: 'Lưu sản phẩm', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('Hãng, danh mục hoặc sản phẩm đang ẩn')
   await expect(page.getByRole('status').filter({ hasText: 'Đã lưu sản phẩm' })).toHaveCount(0)
+})
+
+test('lost upload acknowledgment retries once and reload recovers the same image through real API', async ({ page }) => {
+  const product = await createProduct(page)
+  const route = `**/api/v1/admin/products/${product.id}/images`
+  let firstKey = ''
+  await page.route(route, async request => {
+    const body = request.request().postDataBuffer()?.toString() ?? ''
+    firstKey = /name="operationKey"\r\n\r\n([^\r]+)/.exec(body)?.[1] ?? ''
+    const response = await request.fetch(); expect(response.status()).toBe(201)
+    await request.abort('failed')
+  })
+  await page.getByLabel('File ảnh').setInputFiles({ name: 'retry.png', mimeType: 'image/png', buffer: png() })
+  await page.getByLabel('Mô tả ảnh').fill('Ảnh mất phản hồi')
+  await page.getByRole('button', { name: 'Tải ảnh lên', exact: true }).click()
+  await expect(page.getByRole('alert')).toBeVisible(); await expect(page.getByLabel('Mô tả ảnh')).toBeDisabled()
+  expect(firstKey).toMatch(/^[0-9a-f-]{36}$/)
+  let retryKey = ''
+  await page.unroute(route)
+  await page.route(route, async request => {
+    retryKey = /name="operationKey"\r\n\r\n([^\r]+)/.exec(request.request().postDataBuffer()?.toString() ?? '')?.[1] ?? ''
+    await request.continue()
+  })
+  await page.getByRole('button', { name: 'Thử lại tải ảnh', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Đã thêm ảnh' })).toBeVisible(); expect(retryKey).toBe(firstKey)
+  const dto = await (await page.request.get('/api/v1/admin/products/' + product.id)).json() as { images: { id: string }[] }; expect(dto.images).toHaveLength(1)
+  await page.unroute(route)
+  await page.route(route, async request => { expect((await request.fetch()).status()).toBe(201); await request.abort('failed') })
+  await page.getByLabel('File ảnh').setInputFiles({ name: 'reload.png', mimeType: 'image/png', buffer: png() })
+  await page.getByLabel('Mô tả ảnh').fill('Ảnh phục hồi sau tải lại')
+  await page.getByRole('button', { name: 'Tải ảnh lên', exact: true }).click()
+  await expect(page.getByRole('alert')).toBeVisible(); await page.unroute(route); await page.reload()
+  await page.getByRole('button', { name: 'Kiểm tra kết quả tải ảnh', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Đã tìm thấy ảnh' })).toBeVisible()
+  await expect(page.locator('.catalog-images > li')).toHaveCount(2)
+  const final = await (await page.request.get('/api/v1/admin/products/' + product.id)).json() as { images: { id: string }[] }; expect(final.images).toHaveLength(2); expect(final.images[0].id).toBe(dto.images[0].id)
+  await expect(page.getByRole('button', { name: 'Tải ảnh lên', exact: true })).toBeEnabled()
 })

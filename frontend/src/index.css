@@ -232,3 +232,4 @@ p { line-height: 1.65; }
 .order-detail-page .catalog-panel{overflow-wrap:anywhere}.order-detail-page>.catalog-panel{margin-top:24px}.order-detail-grid .catalog-panel{display:grid;align-content:start;gap:16px}
 
 .admin-header{flex-wrap:wrap;gap:16px}.admin-session-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.admin-session-actions .button{min-height:40px}.admin-session-actions .notice{flex-basis:100%}
+.payment-panel{margin-top:24px;overflow-wrap:anywhere}.payment-panel form{margin:20px 0}.payment-row{padding:20px 0;border-top:1px solid var(--border)}.payment-totals{display:flex;gap:24px;flex-wrap:wrap}.payment-totals dd{margin:4px 0;font-weight:700}

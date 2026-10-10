@@ -406,6 +406,53 @@ namespace PhoneStore.Api.Data.Migrations
                     b.ToTable("Brands", (string)null);
                 });
 
+            modelBuilder.Entity("PhoneStore.Api.Entities.CatalogImageUpload", b =>
+                {
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OperationKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long?>("ImageId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ManagedName")
+                        .IsRequired()
+                        .HasMaxLength(42)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(42)");
+
+                    b.Property<long>("ProductId")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
+
+                    b.Property<long?>("VariantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("ActorUserId", "OperationKey");
+
+                    b.HasIndex("ManagedName")
+                        .IsUnique();
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("CatalogImageUploads", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CatalogImageUploads_ImageId", "[ImageId] IS NULL OR [ImageId] > 0");
+                        });
+                });
+
             modelBuilder.Entity("PhoneStore.Api.Entities.Category", b =>
                 {
                     b.Property<long>("Id")
@@ -1820,7 +1867,7 @@ namespace PhoneStore.Api.Data.Migrations
                         .HasColumnType("datetime2(3)")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
-                    b.Property<Guid>("CreatedByUserId")
+                    b.Property<Guid?>("CreatedByUserId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("EventKey")
@@ -2307,6 +2354,21 @@ namespace PhoneStore.Api.Data.Migrations
                     b.Navigation("ActorUser");
                 });
 
+            modelBuilder.Entity("PhoneStore.Api.Entities.CatalogImageUpload", b =>
+                {
+                    b.HasOne("PhoneStore.Api.Entities.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("PhoneStore.Api.Entities.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PhoneStore.Api.Entities.CustomerProfile", b =>
                 {
                     b.HasOne("PhoneStore.Api.Entities.CustomerTier", "Tier")
@@ -2691,8 +2753,7 @@ namespace PhoneStore.Api.Data.Migrations
                     b.HasOne("PhoneStore.Api.Entities.ApplicationUser", "CreatedByUser")
                         .WithMany()
                         .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("PhoneStore.Api.Entities.Payment", "Payment")
                         .WithMany("Refunds")

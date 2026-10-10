@@ -6,6 +6,7 @@ const variant = { id: '9007199254740993', sku: 'SYNTHETIC', color: 'Black', stor
 const product = { id: '1', name: 'Synthetic phone', slug: 'synthetic-phone', description: '<script>synthetic</script>', specificationsJson: null, brand: lookup, category: lookup, variants: [variant], images: [] }
 test('public decoder preserves bigint and rejects unsafe prices and invalid availability', () => {
   expect(decodeStoreProduct(product).variants[0].id).toBe(variant.id)
+  expect(decodeStoreProduct({ ...product, images: [{ id: '1', variantId: null, sortOrder: 0, altText: 'Cloud image', imageUrl: '/api/v1/catalog-images/cloud-' + 'a'.repeat(32) + '.png' }] }).images[0].imageUrl).toContain('/cloud-')
   for (const change of [{ price: -1 }, { price: 1.5 }, { price: 9007199254740992 }, { available: -1 }, { available: 2147483648 }, { available: '3' }]) expect(() => decodeStoreProduct({ ...product, variants: [{ ...variant, ...change }] })).toThrow()
 })
 test('public detail rejects inactive parents, empty or duplicate variants and foreign images', () => {

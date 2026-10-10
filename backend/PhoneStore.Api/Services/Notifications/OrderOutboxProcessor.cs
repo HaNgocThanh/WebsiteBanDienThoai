@@ -26,7 +26,7 @@ public sealed class OrderOutboxProcessor(AppDbContext db, OrderAccessMailQueue m
                     SELECT TOP(1) * FROM [OutboxMessages] WITH (UPDLOCK, READPAST, ROWLOCK)
                     WHERE [ProcessedAt] IS NULL AND [NextAttemptAt] <= @now
                       AND ([LockedUntil] IS NULL OR [LockedUntil] <= @now)
-                      AND [Type] IN ('OrderPlaced', 'OrderMail', 'OrderClaimed')
+                      AND [Type] IN ('OrderPlaced', 'OrderMail', 'OrderClaimed', 'PaymentInitiated', 'PaymentConfirmed')
                     ORDER BY [NextAttemptAt], [Id]
                 )
                 UPDATE candidate SET [LockOwner]=@owner, [LockedUntil]=@until, [Attempts]=[Attempts]+1
@@ -92,7 +92,7 @@ public sealed class OrderOutboxProcessor(AppDbContext db, OrderAccessMailQueue m
         {
             if (!await db.Notifications.AnyAsync(n => n.UserId == recipient && n.EventKey == source.EventKey, ct))
                 db.Notifications.Add(new Notification { UserId = recipient, OrderId = order.Id, Type = source.Type,
-                    Title = source.Type == "OrderPlaced" ? "Đơn hàng mới" : "Đơn hàng đã được nhận quyền",
+                    Title = source.Type switch { "OrderPlaced" => "Đơn hàng mới", "OrderClaimed" => "Đơn hàng đã được nhận quyền", "PaymentInitiated" => "Đang chờ thanh toán SePay", "PaymentConfirmed" => "Đã ghi nhận thanh toán", _ => "Đơn hàng có cập nhật" },
                     Body = "Đơn " + order.OrderNumber, EventKey = source.EventKey, CreatedAt = Now });
         }
         if (source.Type == "OrderPlaced")

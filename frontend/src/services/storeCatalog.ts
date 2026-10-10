@@ -10,7 +10,7 @@ export interface StoreProduct { id: string; name: string; slug: string; descript
 function text(v: unknown): string { if (typeof v !== 'string') throw new TypeError('Invalid text'); return v }
 function slug(v: unknown): string { const value = text(v); if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(value) || value.length > 220) throw new TypeError('Invalid slug'); return value }
 function integer(v: unknown, min: number, max: number): number { if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < min || v > max) throw new TypeError('Invalid quantity'); return v }
-export function managedImageUrl(v: unknown): string { const s = text(v); if (!/^\/api\/v1\/catalog-images\/[0-9a-f]{32}\.png$/.test(s)) throw new TypeError('Invalid managed URL'); return s }
+export function managedImageUrl(v: unknown): string { const s = text(v); if (!/^\/api\/v1\/catalog-images\/(?:cloud-)?[0-9a-f]{32}\.png$/.test(s)) throw new TypeError('Invalid managed URL'); return s }
 function publicLookup(v: unknown): Lookup { const value = decodeLookup(v); if (!value.isActive) throw new TypeError('Inactive lookup in public catalog'); return value }
 export function decodeStoreSummary(v: unknown): StoreSummary {
   if (!isRecord(v)) throw new TypeError('Invalid product')

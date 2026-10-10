@@ -19,7 +19,8 @@ export function checkoutKey(v: unknown) { const key = text(v); if (!/^[0-9a-f]{8
 export function decodePlacedOrder(v: unknown): PlacedOrder {
   if (!isRecord(v) || v.currency !== 'VND' || typeof v.status !== 'string' || !Object.hasOwn(orderStatuses, v.status) || !['COD', 'BankTransfer'].includes(text(v.paymentMethod)) || !/^PS[0-9a-f]{28}$/.test(text(v.orderNumber))) throw new TypeError('Invalid order')
   const result: PlacedOrder = { id: parseEntityId(v.id), orderNumber: text(v.orderNumber), status: v.status as PlacedOrder['status'], grandTotal: parseMoney(v.grandTotal), currency: 'VND', paymentMethod: v.paymentMethod as PaymentMethod, paymentDueAt: v.paymentDueAt === null ? null : utc(v.paymentDueAt) }
-  if (result.paymentMethod === 'COD' && result.paymentDueAt !== null || result.paymentMethod === 'BankTransfer' && result.paymentDueAt === null) throw new TypeError('Invalid payment deadline')
+  // Bank transfer deadlines are cleared after full payment; null does not prove payment.
+  if (result.paymentMethod === 'COD' && result.paymentDueAt !== null) throw new TypeError('Invalid payment deadline')
   return result
 }
 export function decodeSession(v: unknown): CheckoutSession { if (!isRecord(v)) throw new TypeError('Invalid session'); return { checkoutKey: checkoutKey(v.checkoutKey), expiresAt: utc(v.expiresAt) } }

@@ -146,3 +146,21 @@ test('CSRF rejection keeps a distinct session-change message and never retries t
   await expect(request('/api/v1/me', decodeEmpty, { method: 'PATCH' })).rejects.toMatchObject({ code: 'CSRF_INVALID', message: 'Phiên làm việc đã thay đổi. Vui lòng tải lại trang và thử lại.' })
   expect(fetchMock).toHaveBeenCalledTimes(2)
 })
+
+test('large upload has its own timeout while CSRF remains bounded to fifteen seconds', async () => {
+  vi.useFakeTimers()
+  const { catalog } = await import('./catalog')
+  const image = { id: '1', variantId: null, imageUrl: '/api/v1/catalog-images/cloud-' + 'a'.repeat(32) + '.png', altText: 'Synthetic', sortOrder: 0 }
+  const fetchMock = vi.fn().mockResolvedValueOnce(json({ token: 'synthetic' })).mockImplementationOnce((_path, init: RequestInit) => new Promise<Response>((resolve, reject) => {
+    setTimeout(() => resolve(json(image, 201)), 20000)
+    init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+  }))
+  vi.stubGlobal('fetch', fetchMock)
+  const upload = catalog.upload('1', new FormData())
+  await vi.advanceTimersByTimeAsync(20001)
+  await expect(upload).resolves.toEqual(image); expect(fetchMock).toHaveBeenCalledTimes(2)
+  const hangingCsrf = vi.fn().mockImplementation((_path, init: RequestInit) => new Promise((_resolve, reject) => { init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))) }))
+  vi.stubGlobal('fetch', hangingCsrf)
+  const blocked = expect(catalog.upload('1', new FormData())).rejects.toMatchObject({ code: 'TIMEOUT' })
+  await vi.advanceTimersByTimeAsync(15001); await blocked; expect(hangingCsrf).toHaveBeenCalledTimes(1)
+})

@@ -5,3 +5,5 @@
 **/.env
 **/appsettings.Development.json
 **/appsettings.*.local.json
+**/.local-mailbox
+**/.local-catalog-images

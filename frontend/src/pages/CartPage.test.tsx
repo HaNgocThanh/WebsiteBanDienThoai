@@ -32,7 +32,7 @@ test('name, selected variant and image load before quote, survive quantity edits
   open(); await screen.findByRole('heading', { name: 'Synthetic' })
   expect(screen.getByText('Black · 128 GB · RAM 8 GB')).toBeTruthy()
   const image = screen.getByRole('img', { name: 'Synthetic Black' })
-  expect(image.getAttribute('src')).toBe(displayVariant.imageUrl)
+  expect(image.getAttribute('src')).toBe(displayVariant.imageUrl + '?size=thumbnail')
   expect(screen.queryByText('Phiên bản #2')).toBeNull(); expect(screen.queryByText('Báo giá hiện tại')).toBeNull()
   fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '2' } })
   expect(screen.getByRole('heading', { name: 'Synthetic' })).toBeTruthy()

@@ -1,4 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PhoneStore.Api.DTOs.Catalog;
@@ -10,6 +13,7 @@ namespace PhoneStore.Api.Controllers;
 public sealed class CatalogImageRequest
 {
     [Required] public IFormFile File { get; init; } = null!;
+    public Guid OperationKey { get; init; }
     public string? VariantId { get; init; }
     [Required, MaxLength(200)] public string AltText { get; init; } = "";
     [Range(0, int.MaxValue)] public int SortOrder { get; init; }
@@ -42,20 +46,28 @@ public sealed class AdminCatalogController(CatalogService catalog, ICatalogImage
     [HttpGet("variants/{id}")] public async Task<IActionResult> Variant(string id, CancellationToken ct) => Versioned(await catalog.AdminVariantAsync(Id(id), ct));
     [HttpPost("products/{id}/variants")] public async Task<IActionResult> CreateVariant(string id, VariantRequest request, CancellationToken ct) => Versioned(await catalog.WriteVariantAsync(null, Id(id), request, null, ct), true);
     [HttpPatch("variants/{id}")] public async Task<IActionResult> UpdateVariant(string id, VariantRequest request, CancellationToken ct) => Versioned(await catalog.WriteVariantAsync(Id(id), null, request, Match, ct));
-    [HttpPost("products/{id}/images"), RequestSizeLimit(CatalogPng.MaxBytes + 65536)]
+    [HttpPost("products/{id}/images"), RequestSizeLimit(CatalogImageInput.MaxBytes + 65536)]
     public async Task<IActionResult> Upload(string id, [FromForm] CatalogImageRequest request, CancellationToken ct)
     {
         var productId = Id(id);
-        if (Request.Form.Keys.Any(key => !new[] { "variantId", "altText", "sortOrder" }.Contains(key, StringComparer.OrdinalIgnoreCase)) || Request.Form.Files.Count != 1)
+        if (request.OperationKey == Guid.Empty) throw new CatalogException(400, "VALIDATION_ERROR", "Cần mã yêu cầu tải ảnh hợp lệ.");
+        if (Request.Form.Keys.Any(key => !new[] { "variantId", "altText", "sortOrder", "operationKey" }.Contains(key, StringComparer.OrdinalIgnoreCase)) || Request.Form.Files.Count != 1)
             throw new CatalogException(400, "VALIDATION_ERROR", "Chỉ nhận file, variantId, altText và sortOrder.");
         long? variantId = request.VariantId is null ? null : ApiContract.TryParseId(request.VariantId, out var parsed) ? parsed : throw new CatalogException(400, "INVALID_VARIANT", "VariantId không hợp lệ.");
-        if (request.File.Length > CatalogPng.MaxBytes) throw new CatalogException(413, "IMAGE_TOO_LARGE", "Ảnh vượt 2 MiB.");
-        if (!string.Equals(request.File.ContentType, "image/png", StringComparison.OrdinalIgnoreCase) || !string.Equals(Path.GetExtension(request.File.FileName), ".png", StringComparison.OrdinalIgnoreCase))
+        if (request.File.Length > (images.UsesCloudinary ? CatalogImageInput.MaxBytes : CatalogPng.MaxBytes)) throw new CatalogException(413, "IMAGE_TOO_LARGE", "Ảnh vượt dung lượng cho phép.");
+        if (!images.UsesCloudinary && (!string.Equals(request.File.ContentType, "image/png", StringComparison.OrdinalIgnoreCase) || !string.Equals(Path.GetExtension(request.File.FileName), ".png", StringComparison.OrdinalIgnoreCase)))
             throw new CatalogException(400, "INVALID_IMAGE", "Chỉ nhận file PNG.");
         await using var buffer = new MemoryStream(); await request.File.CopyToAsync(buffer, ct);
-        var image = await catalog.UploadAsync(productId, variantId, request.AltText, request.SortOrder, CatalogPng.Validate(buffer.ToArray()), images, logger, ct);
+        var bytes = buffer.ToArray();
+        var hash = SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { productId, variantId, altText = request.AltText.Trim(), request.SortOrder, contentType = request.File.ContentType.ToLowerInvariant(), fileHash = Convert.ToHexString(SHA256.HashData(bytes)) }));
+        if (images.UsesCloudinary) CatalogImageInput.Validate(request.File.FileName, request.File.ContentType, bytes);
+        else bytes = CatalogPng.Validate(bytes);
+        var image = await catalog.UploadAsync(productId, variantId, request.AltText, request.SortOrder, bytes, images, logger, Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!), request.OperationKey, hash, ct);
         return Created(image.ImageUrl, image);
     }
+    [HttpGet("products/{id}/image-uploads/{operationKey:guid}")]
+    public async Task<IActionResult> UploadResult(string id, Guid operationKey, CancellationToken ct)
+        => Ok(await catalog.ImageUploadResultAsync(Id(id), Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!), operationKey, ct));
     [HttpDelete("product-images/{id}")]
     public async Task<IActionResult> DeleteImage(string id, CancellationToken ct) { await catalog.DeleteImageAsync(Id(id), images, logger, ct); return NoContent(); }
 }

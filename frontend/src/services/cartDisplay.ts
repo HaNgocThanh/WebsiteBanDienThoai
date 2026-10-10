@@ -11,7 +11,7 @@ export function decodeCartVariants(value: unknown, ids: string[]): CartVariant[]
     if (!ids.includes(variantId) || typeof v.productName !== 'string' || !v.productName.trim() || typeof v.productSlug !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(v.productSlug)
       || typeof v.sku !== 'string' || typeof v.color !== 'string' || typeof v.storageGb !== 'number' || !Number.isInteger(v.storageGb) || v.storageGb < 1 || v.storageGb > 65536
       || typeof v.ramGb !== 'number' || !Number.isInteger(v.ramGb) || v.ramGb < 1 || v.ramGb > 1024
-      || (v.imageUrl !== null && (typeof v.imageUrl !== 'string' || !/^\/api\/v1\/catalog-images\/[0-9a-f]{32}\.png$/.test(v.imageUrl)))
+      || (v.imageUrl !== null && (typeof v.imageUrl !== 'string' || !/^\/api\/v1\/catalog-images\/(?:cloud-)?[0-9a-f]{32}\.png$/.test(v.imageUrl)))
       || (v.imageAltText !== null && typeof v.imageAltText !== 'string')) throw new TypeError('Invalid variant display')
     return { variantId, productName: v.productName, productSlug: v.productSlug, sku: v.sku, color: v.color, storageGb: v.storageGb, ramGb: v.ramGb, imageUrl: v.imageUrl, imageAltText: v.imageAltText }
   })

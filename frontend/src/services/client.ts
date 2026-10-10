@@ -89,7 +89,7 @@ export async function request<T>(path: string, decode: Decoder<T>, options: Requ
         throw new TypeError('Invalid CSRF response.')
       }
       return value.token
-    }, { signal: options.signal, timeoutMs: options.timeoutMs })
+    }, { signal: options.signal, timeoutMs: Math.min(options.timeoutMs ?? 15000, 15000) })
     // Always overwrite a caller-provided token with the token for the current cookie session.
     headers.set('X-CSRF-TOKEN', token)
     return execute(target, decode, { ...options, headers: Object.fromEntries(headers) })

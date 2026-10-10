@@ -29,6 +29,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Product> Products => Set<Product>();
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+    public DbSet<CatalogImageUpload> CatalogImageUploads => Set<CatalogImageUpload>();
     public DbSet<Inventory> Inventory => Set<Inventory>();
     public DbSet<StockReservation> StockReservations => Set<StockReservation>();
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
@@ -103,6 +104,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigureOutboxMessage(modelBuilder.Entity<OutboxMessage>());
         ConfigureIdempotencyRequest(modelBuilder.Entity<IdempotencyRequest>());
         ConfigureAuditLog(modelBuilder.Entity<AuditLog>());
+        modelBuilder.Entity<CatalogImageUpload>(entity =>
+        {
+            entity.ToTable("CatalogImageUploads", table => table.HasCheckConstraint("CK_CatalogImageUploads_ImageId", "[ImageId] IS NULL OR [ImageId] > 0"));
+            entity.HasKey(x => new { x.ActorUserId, x.OperationKey });
+            entity.Property(x => x.RequestHash).HasColumnType("binary(32)").HasMaxLength(32).IsFixedLength().IsRequired();
+            entity.Property(x => x.ManagedName).HasMaxLength(42).IsUnicode(false).IsRequired();
+            entity.Property(x => x.CreatedAt).HasColumnType("datetime2(3)").HasConversion(UtcConverter).HasDefaultValueSql("SYSUTCDATETIME()");
+            entity.HasIndex(x => x.ManagedName).IsUnique();
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ActorUserId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.NoAction);
+            // ImageId intentionally has no FK: completed keys survive physical image deletion.
+        });
 
         // Includes standard Identity relationships; historical data never cascades.
         foreach (var foreignKey in modelBuilder.Model.GetEntityTypes().SelectMany(x => x.GetForeignKeys()))

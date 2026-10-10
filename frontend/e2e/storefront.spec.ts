@@ -22,7 +22,7 @@ test.beforeAll(async ({ browser }) => {
   const receive = await page.request.post('/api/v1/admin/inventory/' + dto.variants.find(v => v.storageGb === 128)!.id + '/receipts', { data: { quantity: 7, reason: 'Storefront acceptance', operationKey: randomUUID() }, headers: { 'X-CSRF-TOKEN': csrf } })
   expect(receive.status()).toBe(201)
   for (const variant of ['', 'PUBLIC-B-' + product.suffix.toUpperCase()]) {
-    await page.getByLabel('File PNG').setInputFiles({ name: 'synthetic.png', mimeType: 'image/png', buffer: png() })
+    await page.getByLabel('File ảnh').setInputFiles({ name: 'synthetic.png', mimeType: 'image/png', buffer: png() })
     if (variant) await page.getByLabel('Ảnh thuộc phiên bản').selectOption({ label: variant })
     else await page.getByLabel('Ảnh thuộc phiên bản').selectOption('')
     await page.getByLabel('Mô tả ảnh').fill(variant ? 'Ảnh trắng riêng' : 'Ảnh chung')
@@ -63,12 +63,12 @@ test('guest home, combined same-variant filters and URL paging use Admin-created
 test('guest variant selection has real price/stock, safe description, responsive keyboard and retry', async ({ page }) => {
   await page.goto('/products/phone-' + product.suffix)
   await expect(page.getByRole('heading', { name: product.name, exact: true })).toBeVisible()
-  await expect(page.getByText('Còn 7 sản phẩm')).toBeVisible(); await expect(page.locator('.store-detail .store-price')).toContainText('25.000.000')
+  await expect(page.getByRole('radio', { checked: true })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Thêm vào giỏ hàng', exact: true })).toBeDisabled(); await expect(page.locator('.store-detail .store-price')).toContainText('Chọn phiên bản')
   await expect(page.locator('.store-main-photo img')).toHaveAttribute('alt', 'Ảnh chung')
   await expect(page.getByRole('button', { name: /Ảnh trắng riêng/ })).toHaveCount(0)
   await expect(page.locator('.store-description')).toContainText('<script>alert(1)</script>'); await expect(page.locator('.store-description script')).toHaveCount(0)
   await page.getByRole('radio', { name: /Trắng/ }).check(); await expect(page.getByText('Hết hàng', { exact: true })).toBeVisible(); await expect(page.locator('.store-detail .store-price')).toContainText('26.000.000')
-  await page.getByRole('button', { name: /Ảnh trắng riêng/ }).click()
+
   await expect(page.locator('.store-main-photo img')).toHaveAttribute('alt', 'Ảnh trắng riêng')
   await expect.poll(() => page.locator('.store-main-photo img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true)
   await page.getByRole('radio', { name: /Trắng/ }).focus(); await page.keyboard.press('ArrowLeft'); await expect(page.getByText('Còn 7 sản phẩm')).toBeVisible()
@@ -79,7 +79,7 @@ test('guest variant selection has real price/stock, safe description, responsive
   }
   const route = '**/api/v1/products/phone-' + product.suffix
   await page.route(route, r => r.abort('failed')); await page.reload(); await expect(page.getByRole('alert')).toBeVisible()
-  await page.unroute(route); await page.getByRole('button', { name: 'Thử tải lại' }).click(); await expect(page.getByText('Còn 7 sản phẩm')).toBeVisible()
+  await page.unroute(route); await page.getByRole('button', { name: 'Thử tải lại' }).click(); await expect(page.getByRole('radio', { checked: true })).toHaveCount(0); await expect(page.getByText('Chọn phiên bản để xem giá')).toBeVisible()
   expect((await page.request.get('/api/v1/admin/products')).status()).toBe(401)
 })
 

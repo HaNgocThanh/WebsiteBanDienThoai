@@ -8,6 +8,7 @@ import { ApiError, fieldError } from '../services/errors'
 import { orders, orderStatuses } from '../services/orders'
 import type { GuestOrder } from '../services/orders'
 import { OrderReceipt } from './CheckoutPage'
+import { OrderPayments } from './OrderPayments'
 
 const failure = (e: unknown) => e instanceof ApiError ? e : new ApiError(0, 'NETWORK_ERROR')
 const neutral = 'Nếu thông tin phù hợp, bạn sẽ nhận được liên kết qua email. Hãy kiểm tra hộp thư và thư rác. Liên kết dùng một lần, có hiệu lực 1 giờ; gửi lại không kéo dài hạn thanh toán của đơn.'
@@ -69,6 +70,7 @@ export function GuestOrderPage() {
   async function setup() { if (lock.current) return; lock.current = true; setSending(true); setSent(false); try { await orders.setup(); setSent(true) } catch (e) { setError(failure(e)) } finally { lock.current = false; setSending(false) } }
   return <section className="page-section"><span className="eyebrow">THÔNG TIN LÚC ĐẶT HÀNG</span><h1>Đơn hàng khách vãng lai</h1>{busy && <p role="status">Đang tải đơn hàng…</p>}{error && <><ErrorNotice error={error} /><SubmitButton type="button" onClick={() => setAttempt(n => n + 1)}>Tải lại đơn</SubmitButton><Link className="button button-outline" to="/guest/lookup">Yêu cầu liên kết mới</Link></>}
     {order && <><OrderReceipt order={order} /><div className="checkout-grid"><section className="catalog-panel"><h2>Sản phẩm đã đặt</h2><ul className="order-lines">{order.items.map(i => <li key={i.id}><strong>{i.productName}</strong><span>{i.variant}</span><small>SKU: {i.sku}</small><span>{i.quantity} × {formatVnd(i.unitPrice - i.unitDiscount)}</span><strong>{formatVnd(i.lineTotal)}</strong></li>)}</ul><dl className="order-totals"><div><dt>Tiền hàng</dt><dd>{formatVnd(order.subtotal)}</dd></div><div><dt>Giảm giá</dt><dd>{formatVnd(order.discountTotal)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatVnd(order.shippingFee)}</dd></div></dl></section><section className="catalog-panel"><h2>Giao hàng</h2><p>{order.recipientName} · {order.phone}</p><p>{[order.addressLine, order.locality, order.province, 'Việt Nam'].filter(Boolean).join(', ')}</p>{order.note && <p>Ghi chú: {order.note}</p>}<p>Đặt lúc {formatVietnamTime(order.createdAt)}</p><h2>Lịch sử đơn</h2><ol className="order-timeline">{order.timeline.map((h, i) => <li key={i}>{orderStatuses[h.toStatus as keyof typeof orderStatuses]} · {formatVietnamTime(h.createdAt)}</li>)}</ol></section></div>
+      <OrderPayments id={order.id} area="guest" />
       {order.createAccountConsent && <section className="catalog-panel"><h2>Quản lý đơn bằng tài khoản</h2><p>Bạn đã đồng ý nhận hướng dẫn tạo tài khoản khi đặt hàng. Việc đăng ký và nhận quyền đơn vẫn cần xác minh email.</p><SubmitButton type="button" busy={sending} onClick={() => void setup()}>Gửi hướng dẫn tạo tài khoản</SubmitButton>{sent && <p className="notice" role="status">{neutral}</p>}</section>}
       <Link className="button button-outline" to="/guest/lookup">Yêu cầu liên kết nhận đơn vào tài khoản</Link>
     </>}

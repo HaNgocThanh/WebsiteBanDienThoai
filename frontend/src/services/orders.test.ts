@@ -9,9 +9,16 @@ test('order decoder preserves bigint IDs and rejects unsafe money/status/deadlin
 test('recovery state cannot fake a successful order', () => {
   expect(() => decodeResult({ state: 'Completed', expiresAt: '2026-10-10T10:00:00Z', order: null })).toThrow(); expect(() => decodeResult({ state: 'Issued', expiresAt: '2026-10-10T10:00:00Z', order: placed })).toThrow()
 })
+
+test('bank order recovery accepts cleared deadline without inferring payment status', () => {
+  const paidOrder = { ...placed, paymentDueAt: null }
+  expect(decodePlacedOrder(paidOrder).paymentDueAt).toBeNull()
+  expect(decodeResult({ state: 'Completed', expiresAt: '2026-10-10T10:00:00Z', order: paidOrder }).order).toEqual(paidOrder)
+  expect(() => decodePlacedOrder({ ...paidOrder, paymentDueAt: undefined })).toThrow()
+})
 test('guest snapshot arithmetic is verified rather than accepting server-shaped garbage', () => {
   const v = { ...placed, subtotal: 1000000, discountTotal: 0, shippingFee: 30000, recipientName: 'Synthetic', phone: '0000000000', addressLine: 'Synthetic', locality: null, province: 'Đà Nẵng', countryCode: 'VN', note: null, createdAt: '2026-10-09T10:00:00Z', createAccountConsent: false, items: [{ id: '1', variantId: '2', productName: 'Synthetic', sku: 'SYN', variant: 'Black', quantity: 1, unitPrice: 1000000, unitDiscount: 0, lineTotal: 1000000 }], timeline: [{ fromStatus: null, toStatus: 'Placed', createdAt: '2026-10-09T10:00:00Z' }] }
-  expect(decodeGuestOrder(v).grandTotal).toBe(1030000); expect(() => decodeGuestOrder({ ...v, shippingFee: 0 })).toThrow(); expect(() => decodeGuestOrder({ ...v, items: [{ ...v.items[0], quantity: 2 }] })).toThrow()
+  expect(decodeGuestOrder(v).grandTotal).toBe(1030000); expect(decodeGuestOrder({ ...v, paymentDueAt: null }).paymentDueAt).toBeNull(); expect(() => decodeGuestOrder({ ...v, shippingFee: 0 })).toThrow(); expect(() => decodeGuestOrder({ ...v, items: [{ ...v.items[0], quantity: 2 }] })).toThrow()
 })
 test('pending checkout only persists sanitized key/cart and rejects corrupt storage', () => {
   savePendingCheckout({ key: '11111111-1111-4111-8111-111111111111', items: [{ variantId: '2', quantity: 1 }] }); expect(Object.keys(JSON.parse(sessionStorage.getItem(pendingCheckoutStorageKey)!))).toEqual(['key', 'items']); expect(readPendingCheckout()?.items).toEqual([{ variantId: '2', quantity: 1 }]); sessionStorage.setItem(pendingCheckoutStorageKey, '{bad'); expect(() => readPendingCheckout()).toThrow()

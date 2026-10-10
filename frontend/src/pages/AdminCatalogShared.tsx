@@ -14,9 +14,9 @@ export function SelectField({ label, value, onChange, children, required = false
   const id = useId()
   return <div className="field"><label htmlFor={id}>{label}</label><select id={id} value={value} onChange={e => onChange(e.target.value)} required={required} aria-invalid={error ? true : undefined} aria-describedby={error ? id + '-error' : undefined}>{children}</select>{error && <small className="field-error" id={id + '-error'}>{error}</small>}</div>
 }
-export function TextAreaField({ label, value, onChange, maxLength, hint, error }: { label: string; value: string; onChange: (value: string) => void; maxLength: number; hint?: string; error?: string }) {
+export function TextAreaField({ label, value, onChange, maxLength, hint, error, required }: { label: string; value: string; onChange: (value: string) => void; maxLength: number; hint?: string; error?: string; required?: boolean }) {
   const id = useId()
-  return <div className="field"><label htmlFor={id}>{label}</label><textarea id={id} value={value} onChange={e => onChange(e.target.value)} maxLength={maxLength} rows={4} aria-invalid={error ? true : undefined} aria-describedby={[hint ? id + '-hint' : '', error ? id + '-error' : ''].filter(Boolean).join(' ') || undefined} />{hint && <small id={id + '-hint'}>{hint}</small>}{error && <small className="field-error" id={id + '-error'}>{error}</small>}</div>
+  return <div className="field"><label htmlFor={id}>{label}</label><textarea id={id} required={required} value={value} onChange={e => onChange(e.target.value)} maxLength={maxLength} rows={4} aria-invalid={error ? true : undefined} aria-describedby={[hint ? id + '-hint' : '', error ? id + '-error' : ''].filter(Boolean).join(' ') || undefined} />{hint && <small id={id + '-hint'}>{hint}</small>}{error && <small className="field-error" id={id + '-error'}>{error}</small>}</div>
 }
 export function ActiveField({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
   return <label className="catalog-check"><input type="checkbox" checked={value} onChange={e => onChange(e.target.checked)} /> Đang hiển thị</label>

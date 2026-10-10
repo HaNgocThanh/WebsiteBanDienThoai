@@ -1,3 +1,8 @@
+import { catalogImageUrl } from '../lib/catalogImageUrl'
+import { readImageUpload, writeImageUpload } from '../lib/catalogUpload'
+import type { PendingImageUpload } from '../lib/catalogUpload'
+import { ApiError } from '../services/errors'
+import { catalogImageAccept, validCatalogImage } from '../lib/catalogImageFile'
 import { fieldError } from '../services/errors'
 import { validateSpecifications } from '../lib/catalogValidation'
 import { useMutation, useResource } from './adminCatalogHooks'
@@ -38,7 +43,7 @@ function ProductEditor({ initial, brands, categories }: { initial?: Product; bra
       </form>
     </section>
     {product ? <><VariantEditor gate={gate} key={`variants-${product.id}`} product={product} onChange={variant => setProduct(p => p ? { ...p, variants: [...p.variants.filter(x => x.id !== variant.id), variant] } : p)} />
-      <ImageEditor gate={gate} key={`images-${product.id}`} product={product} onAdd={image => setProduct(p => p ? { ...p, images: [...p.images, image] } : p)} onDelete={id => setProduct(p => p ? { ...p, images: p.images.filter(x => x.id !== id) } : p)} /></> : <p className="notice">Lưu sản phẩm trước để thêm phiên bản và ảnh.</p>}
+      <ImageEditor gate={gate} key={`images-${product.id}`} product={product} onAdd={image => setProduct(p => p ? { ...p, images: [...p.images.filter(x => x.id !== image.id), image] } : p)} onDelete={id => setProduct(p => p ? { ...p, images: p.images.filter(x => x.id !== id) } : p)} /></> : <p className="notice">Lưu sản phẩm trước để thêm phiên bản và ảnh.</p>}
   </fieldset>
 }
 const emptyVariant = { sku: '', color: '', storageGb: '128', ramGb: '8', price: '', isActive: true }
@@ -58,18 +63,44 @@ function VariantEditor({ product, onChange, gate }: { product: Product; onChange
   </section>
 }
 function ImageEditor({ product, onAdd, onDelete, gate }: { product: Product; onAdd: (image: CatalogImage) => void; onDelete: (id: string) => void; gate: MutationGate }) {
+  const [restored] = useState(() => { try { return { pending: readImageUpload(product.id), blocked: false } } catch { return { pending: undefined, blocked: true } } })
+  const [pending, setPending] = useState<PendingImageUpload | undefined>(restored.pending)
+  const pendingRef = useRef(restored.pending)
   const [file, setFile] = useState<File>()
-  const [variantId, setVariantId] = useState('')
-  const [altText, setAltText] = useState('')
-  const [sortOrder, setSortOrder] = useState('0')
-  const [invalid, setInvalid] = useState('')
+  const [variantId, setVariantId] = useState(restored.pending?.variantId ?? '')
+  const [altText, setAltText] = useState(restored.pending?.altText ?? '')
+  const [sortOrder, setSortOrder] = useState(restored.pending?.sortOrder ?? '0')
+  const [invalid, setInvalid] = useState(restored.blocked ? 'Không thể đọc phiên tải ảnh. Kiểm tra quyền lưu trữ trình duyệt trước khi tiếp tục.' : '')
   const [deleteId, setDeleteId] = useState('')
   const input = useRef<HTMLInputElement>(null)
   const action = useMutation(gate)
-  return <section className="catalog-panel"><h2>Ảnh sản phẩm</h2><ActionNotice action={action} />{product.images.length === 0 ? <p>Chưa có ảnh.</p> : <ul className="catalog-images">{[...product.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => <li key={img.id}><img src={img.imageUrl} alt={img.altText} /><strong>{img.altText}</strong><p>{img.variantId ? product.variants.find(v => v.id === img.variantId)?.sku : 'Ảnh chung'} · Thứ tự {img.sortOrder}</p>{deleteId === img.id ? <div className="catalog-actions"><SubmitButton type="button" busy={action.busy} onClick={() => { void action.run(signal => catalog.deleteImage(img.id, signal), () => { onDelete(img.id); setDeleteId('') }, 'Đã xóa ảnh.') }}>Xác nhận xóa ảnh</SubmitButton><SubmitButton type="button" disabled={action.busy} className="button-outline" onClick={() => setDeleteId('')}>Giữ ảnh</SubmitButton></div> : <SubmitButton type="button" disabled={action.busy} className="button-outline" onClick={() => { action.clear(); setDeleteId(img.id) }}>Xóa ảnh {img.altText}</SubmitButton>}</li>)}</ul>}
-    <h3>Thêm ảnh</h3><p className="muted">PNG RGB/RGBA 8 bit, không interlace, tối đa 2 MiB và 2048 × 2048 pixel.</p>{invalid && <p className="field-error" role="alert">{invalid}</p>}
-    <form onSubmit={e => { e.preventDefault(); if (!file || !/\.png$/i.test(file.name) || file.type !== 'image/png' || file.size === 0 || file.size > 2 * 1024 * 1024 || !/^\d+$/.test(sortOrder) || Number(sortOrder) > 2147483647) { setInvalid('Chọn ảnh PNG tối đa 2 MiB và thứ tự là số nguyên từ 0 đến 2147483647.'); return } setInvalid(''); const form = new FormData(); form.set('file', file); form.set('altText', altText); form.set('sortOrder', sortOrder); if (variantId) form.set('variantId', variantId); void action.run(signal => catalog.upload(product.id, form, signal), img => { onAdd(img); setFile(undefined); setAltText(''); if (input.current) input.current.value = '' }, 'Đã thêm ảnh.') }}>
-      <fieldset disabled={action.busy}><div className="field"><label htmlFor={`image-file-${product.id}`}>File PNG</label><input ref={input} id={`image-file-${product.id}`} type="file" accept="image/png,.png" required onChange={e => { setFile(e.target.files?.[0]); setInvalid('') }} /></div><div className="catalog-fields"><SelectField label="Ảnh thuộc phiên bản" value={variantId} onChange={setVariantId}><option value="">Ảnh chung cho sản phẩm</option>{product.variants.map(v => <option key={v.id} value={v.id}>{v.sku}{!v.isActive && ' (đã ẩn)'}</option>)}</SelectField><TextField error={fieldError(action.error?.errors ?? {}, "altText")} label="Mô tả ảnh" required maxLength={200} value={altText} onChange={e => setAltText(e.target.value)} /><TextField error={fieldError(action.error?.errors ?? {}, "sortOrder")} label="Thứ tự ảnh" required inputMode="numeric" pattern="[0-9]+" value={sortOrder} onChange={e => setSortOrder(e.target.value)} /></div><SubmitButton busy={action.busy}>Tải ảnh lên</SubmitButton></fieldset>
+  function complete(img: CatalogImage) {
+    onAdd(img)
+    writeImageUpload(product.id)
+    pendingRef.current = undefined; setPending(undefined); setFile(undefined); setAltText('')
+    if (input.current) input.current.value = ''
+  }
+  function submit() {
+    if (restored.blocked) return
+    if (!validCatalogImage(file) || !/^\d+$/.test(sortOrder) || Number(sortOrder) > 2147483647) { setInvalid('Chọn ảnh đúng định dạng, tối đa 10 MiB và thứ tự là số nguyên từ 0 đến 2147483647.'); return }
+    const draft = pendingRef.current ?? { key: crypto.randomUUID(), variantId, altText, sortOrder }
+    try { writeImageUpload(product.id, draft) } catch { setInvalid('Không thể lưu mã yêu cầu. Kiểm tra quyền lưu trữ trình duyệt.'); return }
+    pendingRef.current = draft; setPending(draft); setInvalid('')
+    const form = new FormData(); form.set('operationKey', draft.key); form.set('file', file!); form.set('altText', draft.altText); form.set('sortOrder', draft.sortOrder); if (draft.variantId) form.set('variantId', draft.variantId)
+    void action.run(async signal => {
+      try { return await catalog.upload(product.id, form, signal) }
+      catch (error) {
+        // Only discard a definitely rejected request. Unknown outcomes must retain the key.
+        if (error instanceof ApiError && [400, 413, 415, 422].includes(error.status)) { writeImageUpload(product.id); pendingRef.current = undefined; setPending(undefined) }
+        throw error
+      }
+    }, complete, 'Đã thêm ảnh.')
+  }
+  return <section className="catalog-panel"><h2>Ảnh sản phẩm</h2><ActionNotice action={action} />{product.images.length === 0 ? <p>Chưa có ảnh.</p> : <ul className="catalog-images">{[...product.images].sort((a, b) => a.sortOrder - b.sortOrder).map(img => <li key={img.id}><img src={catalogImageUrl(img.imageUrl, "card")} alt={img.altText} loading="lazy" decoding="async" /><strong>{img.altText}</strong><a className="button button-outline" href={img.imageUrl + '?download=true'} download>Tải ảnh {img.altText}</a><p>{img.variantId ? product.variants.find(v => v.id === img.variantId)?.sku : 'Ảnh chung'} · Thứ tự {img.sortOrder}</p>{deleteId === img.id ? <div className="catalog-actions"><SubmitButton type="button" busy={action.busy} onClick={() => { void action.run(signal => catalog.deleteImage(img.id, signal), () => { onDelete(img.id); setDeleteId('') }, 'Đã xóa ảnh.') }}>Xác nhận xóa ảnh</SubmitButton><SubmitButton type="button" disabled={action.busy} className="button-outline" onClick={() => setDeleteId('')}>Giữ ảnh</SubmitButton></div> : <SubmitButton type="button" disabled={action.busy} className="button-outline" onClick={() => { action.clear(); setDeleteId(img.id) }}>Xóa ảnh {img.altText}</SubmitButton>}</li>)}</ul>}
+    <h3>Thêm ảnh</h3><p className="muted">JPG/JPEG, PNG, WebP, GIF, BMP hoặc SVG, tối đa 10 MiB. Ảnh tải xuống là PNG; ảnh động lấy khung đầu tiên.</p>{invalid && <p className="field-error" role="alert">{invalid}</p>}
+    {pending && <p className="notice">Yêu cầu tải ảnh chưa được xác nhận. Kiểm tra kết quả trước; nếu cần thử lại, giữ nguyên ảnh đã chọn.<SubmitButton type="button" disabled={action.busy} onClick={() => { void action.run(signal => catalog.uploadResult(product.id, pending.key, signal), complete, 'Đã tìm thấy ảnh đã tải lên.') }}>Kiểm tra kết quả tải ảnh</SubmitButton></p>}
+    <form onSubmit={e => { e.preventDefault(); submit() }}>
+      <fieldset disabled={action.busy}><div className="field"><label htmlFor={`image-file-${product.id}`}>File ảnh</label><input ref={input} id={`image-file-${product.id}`} type="file" accept={catalogImageAccept} required onChange={e => { setFile(e.target.files?.[0]); setInvalid('') }} /></div><fieldset disabled={!!pending}><div className="catalog-fields"><SelectField label="Ảnh thuộc phiên bản" value={variantId} onChange={setVariantId}><option value="">Ảnh chung cho sản phẩm</option>{product.variants.map(v => <option key={v.id} value={v.id}>{v.sku}{!v.isActive && ' (đã ẩn)'}</option>)}</SelectField><TextField error={fieldError(action.error?.errors ?? {}, "altText")} label="Mô tả ảnh" required maxLength={200} value={altText} onChange={e => setAltText(e.target.value)} /><TextField error={fieldError(action.error?.errors ?? {}, "sortOrder")} label="Thứ tự ảnh" required inputMode="numeric" pattern="[0-9]+" value={sortOrder} onChange={e => setSortOrder(e.target.value)} /></div></fieldset><SubmitButton busy={action.busy} disabled={restored.blocked}>{pending ? "Thử lại tải ảnh" : "Tải ảnh lên"}</SubmitButton></fieldset>
     </form>
   </section>
 }

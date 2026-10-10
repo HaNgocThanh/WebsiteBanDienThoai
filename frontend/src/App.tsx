@@ -1,3 +1,4 @@
+import { SePayResultPage } from './pages/SePayResultPage'
 import { AdminAccountPage } from './pages/AdminAccount'
 import { OrderListPage, OrderDetailPage, NotificationsPage } from './pages/OrderManagement'
 import { useEffect, useRef } from 'react'
@@ -42,7 +43,7 @@ export default function App() {
       <Route path="products/:slug" element={<StoreProductPage />} />
       <Route path="cart" element={<CartPage />} />
       <Route path="checkout" element={<CheckoutPage />} />
-      <Route path="checkout/success" element={<CheckoutSuccessPage />} />
+      <Route path="checkout/success" element={<CheckoutSuccessPage />} /><Route path="payments/sepay/result" element={<SePayResultPage />} />
       <Route path="guest/lookup" element={<GuestLookupPage />} />
       <Route path="guest/access" element={<GuestAccessPage />} />
       <Route path="guest/order" element={<GuestOrderPage />} />

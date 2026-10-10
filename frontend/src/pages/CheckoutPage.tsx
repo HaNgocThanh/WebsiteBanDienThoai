@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { OrderPayments } from './OrderPayments'
 import { Link, useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { readCart, useCart } from '../cart/CartContext'
@@ -17,7 +18,7 @@ import type { Quote } from '../services/quotes'
 const failure = (e: unknown) => e instanceof ApiError ? e : new ApiError(0, 'NETWORK_ERROR')
 export function OrderReceipt({ order, guest = true }: { order: PlacedOrder; guest?: boolean }) {
   return <section className="catalog-panel order-receipt"><h2>Mã đơn: {order.orderNumber}</h2><dl><div><dt>Trạng thái đơn</dt><dd>{orderStatuses[order.status]}</dd></div><div><dt>Tổng tiền</dt><dd>{formatVnd(order.grandTotal)}</dd></div><div><dt>Phương thức</dt><dd>{order.paymentMethod === 'COD' ? 'Thanh toán khi nhận hàng (COD)' : 'Chuyển khoản ngân hàng'}</dd></div>{order.paymentDueAt && <div><dt>Hạn thanh toán</dt><dd>{formatVietnamTime(order.paymentDueAt)}</dd></div>}</dl>
-    <p>{order.paymentMethod === 'COD' ? 'Thanh toán khi nhận hàng. Cửa hàng sẽ liên hệ để xác nhận đơn.' : 'Đơn đã được ghi nhận, chưa phải xác nhận đã thanh toán. Hướng dẫn chuyển khoản chưa có sẵn trên website; vui lòng chờ cửa hàng liên hệ.'}</p>
+    <p>{order.paymentMethod === 'COD' ? 'Thanh toán khi nhận hàng. Cửa hàng sẽ liên hệ để xác nhận đơn.' : 'Đơn đã được ghi nhận, chưa phải xác nhận đã thanh toán. Bạn có thể tiếp tục thanh toán qua SePay Sandbox bên dưới.'}</p>
     <p className="muted">{guest ? 'Bạn có thể yêu cầu liên kết xem đơn bằng mã đơn và email đặt hàng.' : 'Đơn hàng được gắn với tài khoản của bạn. Hãy lưu mã đơn để liên hệ cửa hàng khi cần.'}</p><Link className="button button-outline" to={guest ? '/guest/lookup' : '/account'}>{guest ? 'Tra cứu đơn khách vãng lai' : 'Về tài khoản'}</Link></section>
 }
 export function CheckoutPage() {
@@ -139,7 +140,7 @@ export function CheckoutPage() {
 }
 export function CheckoutSuccessPage() {
   const navigate = useNavigate(), auth = useAuth()
-  const [order, setOrder] = useState<PlacedOrder>(), [error, setError] = useState<ApiError>(), [busy, setBusy] = useState(true), [attempt, setAttempt] = useState(0)
+  const [receiptKey, setReceiptKey] = useState<string>(), [order, setOrder] = useState<PlacedOrder>(), [error, setError] = useState<ApiError>(), [busy, setBusy] = useState(true), [attempt, setAttempt] = useState(0)
   useEffect(() => {
     const controller = new AbortController()
     queueMicrotask(() => {
@@ -147,10 +148,10 @@ export function CheckoutSuccessPage() {
       setBusy(true); setError(undefined)
       try {
       const operation = readPendingCheckout(); if (!operation) { setBusy(false); return }
-      orders.result(operation.key, controller.signal).then(result => { if (!controller.signal.aborted) { if (result.order) setOrder(result.order); else setError(new ApiError(409, 'CHECKOUT_NOT_COMPLETED')) } }).catch(e => { if (!controller.signal.aborted) setError(failure(e)) }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
+      orders.result(operation.key, controller.signal).then(result => { if (!controller.signal.aborted) { if (result.order) { setOrder(result.order); setReceiptKey(operation.key) } else setError(new ApiError(409, 'CHECKOUT_NOT_COMPLETED')) } }).catch(e => { if (!controller.signal.aborted) setError(failure(e)) }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
       } catch (e) { setError(failure(e)); setBusy(false) }
     })
     return () => controller.abort()
   }, [attempt])
-  return <section className="page-section"><h1>{order ? 'Đặt hàng thành công' : 'Kết quả đặt hàng'}</h1>{busy && <p role="status">Đang kiểm tra kết quả từ cửa hàng…</p>}{error && <><ErrorNotice error={error} /><SubmitButton type="button" onClick={() => setAttempt(n => n + 1)}>Kiểm tra lại</SubmitButton></>}{order && !busy && <><p className="notice" role="status">Đơn hàng đã được ghi nhận. Hãy lưu mã đơn để tra cứu.</p><OrderReceipt order={order} guest={!auth.user} /><SubmitButton type="button" onClick={() => { try { savePendingCheckout(null); navigate('/products') } catch (e) { setError(failure(e)) } }}>Tiếp tục mua sắm</SubmitButton></>}{!busy && !order && !error && <EmptyState title="Chưa có kết quả đặt hàng" action={<Link className="button" to="/cart">Về giỏ hàng</Link>}><p>Chỉ hiển thị thành công khi cửa hàng đã ghi nhận đơn.</p></EmptyState>}<Link to="/guest/lookup">Yêu cầu liên kết xem đơn</Link></section>
+  return <section className="page-section"><h1>{order ? 'Đặt hàng thành công' : 'Kết quả đặt hàng'}</h1>{busy && <p role="status">Đang kiểm tra kết quả từ cửa hàng…</p>}{error && <><ErrorNotice error={error} /><SubmitButton type="button" onClick={() => setAttempt(n => n + 1)}>Kiểm tra lại</SubmitButton></>}{order && !busy && <><p className="notice" role="status">Đơn hàng đã được ghi nhận. Hãy lưu mã đơn để tra cứu.</p><OrderReceipt order={order} guest={!auth.user} />{order.paymentMethod === 'BankTransfer' && receiptKey && <OrderPayments area="checkout" id={receiptKey} />}<SubmitButton type="button" onClick={() => { try { savePendingCheckout(null); navigate('/products') } catch (e) { setError(failure(e)) } }}>Tiếp tục mua sắm</SubmitButton></>}{!busy && !order && !error && <EmptyState title="Chưa có kết quả đặt hàng" action={<Link className="button" to="/cart">Về giỏ hàng</Link>}><p>Chỉ hiển thị thành công khi cửa hàng đã ghi nhận đơn.</p></EmptyState>}<Link to="/guest/lookup">Yêu cầu liên kết xem đơn</Link></section>
 }

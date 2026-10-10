@@ -31,7 +31,7 @@ export function decodeVariant(value: unknown): Variant {
 }
 export function decodeImage(value: unknown): CatalogImage {
   const v = record(value); const url = str(v.imageUrl)
-  if (!/^\/api\/v1\/catalog-images\/[0-9a-f]{32}\.png$/.test(url)) throw new TypeError('Invalid image URL')
+  if (!/^\/api\/v1\/catalog-images\/(?:cloud-)?[0-9a-f]{32}\.png$/.test(url)) throw new TypeError('Invalid image URL')
   return { id: parseEntityId(v.id), variantId: v.variantId === null ? null : parseEntityId(v.variantId), imageUrl: url, altText: str(v.altText), sortOrder: integer(v.sortOrder, 0, 2147483647) }
 }
 export function decodeProduct(value: unknown): Product {
@@ -48,6 +48,7 @@ export const catalog = {
   product: (id: string, signal?: AbortSignal) => request(`${root}/products/${parseEntityId(id)}`, decodeProduct, { signal }),
   saveProduct: (body: ProductInput, current?: Product, signal?: AbortSignal) => request(`${root}/products${current ? '/' + current.id : ''}`, decodeProduct, { method: current ? 'PATCH' : 'POST', body, version: current?.version, signal }),
   saveVariant: (productId: string, body: VariantInput, current?: Variant, signal?: AbortSignal) => request(current ? `${root}/variants/${current.id}` : `${root}/products/${parseEntityId(productId)}/variants`, decodeVariant, { method: current ? 'PATCH' : 'POST', body, version: current?.version, signal }),
-  upload: (productId: string, form: FormData, signal?: AbortSignal) => request(`${root}/products/${parseEntityId(productId)}/images`, decodeImage, { method: 'POST', form, signal }),
+  upload: (productId: string, form: FormData, signal?: AbortSignal) => request(`${root}/products/${parseEntityId(productId)}/images`, decodeImage, { method: 'POST', form, signal, timeoutMs: 120000 }),
+  uploadResult: (productId: string, key: string, signal?: AbortSignal) => request(`${root}/products/${parseEntityId(productId)}/image-uploads/${encodeURIComponent(key)}`, decodeImage, { signal }),
   deleteImage: (id: string, signal?: AbortSignal) => request(`${root}/product-images/${parseEntityId(id)}`, decodeEmpty, { method: 'DELETE', signal }),
 }

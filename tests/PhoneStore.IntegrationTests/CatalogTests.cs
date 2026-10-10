@@ -24,12 +24,15 @@ public sealed class CatalogTests(SqlFixture sql)
         public AuthFactory Auth { get; }
         public WebApplicationFactory<Program> Server { get; }
         public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), "PhoneStore_Test_Images_" + Guid.NewGuid().ToString("N"));
-        public Host(string connection, string environment = "Development", bool failImageSave = false)
+        public Host(string connection, string environment = "Development", bool failImageSave = false, ProbeCloudState? cloudState = null)
         {
             Auth = new AuthFactory(connection, environment);
             Server = Auth.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
             { ["Catalog:ImagePath"] = DirectoryPath, ["Logging:LogLevel:Default"] = "Warning" }))
-                .ConfigureTestServices(services => { if (failImageSave) services.AddSingleton<ICatalogImageStore>(provider => new FailingStore(new LocalCatalogImageStore(provider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>(), provider.GetRequiredService<IConfiguration>()))); }));
+                .ConfigureTestServices(services => {
+                    if (failImageSave) services.AddSingleton<ICatalogImageStore>(provider => new FailingStore(new LocalCatalogImageStore(provider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>(), provider.GetRequiredService<IConfiguration>())));
+                    if (cloudState is not null) services.AddScoped<ICatalogImageStore>(provider => new ProbeCloudStore(cloudState, provider.GetRequiredService<PhoneStore.Api.Data.AppDbContext>()));
+                }));
         }
         public HttpClient Browser() => Server.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), HandleCookies = true, AllowAutoRedirect = false });
         public void Dispose()
@@ -46,6 +49,27 @@ public sealed class CatalogTests(SqlFixture sql)
         public async Task SaveAsync(string name, byte[] bytes, CancellationToken ct) { await inner.SaveAsync(name, bytes, ct); throw new IOException("synthetic failure"); }
         public Task<byte[]?> ReadAsync(string name, CancellationToken ct) => inner.ReadAsync(name, ct);
         public Task DeleteAsync(string name) => inner.DeleteAsync(name);
+    }
+    // Provider fixture only; SQL/Identity/CSRF/visibility/controller remain real.
+    private sealed class ProbeCloudState
+    {
+        public Dictionary<string, byte[]> Files { get; } = [];
+        public bool SaveOutsideTransaction { get; set; }
+        public bool FailSave { get; set; }
+    }
+    private sealed class ProbeCloudStore(ProbeCloudState state, PhoneStore.Api.Data.AppDbContext db) : ICatalogImageStore
+    {
+        public bool IsConfigured => true;
+        public bool UsesCloudinary => true;
+        public Task SaveAsync(string name, byte[] bytes, CancellationToken ct)
+        {
+            state.SaveOutsideTransaction = db.Database.CurrentTransaction is null;
+            state.Files.Add(name, Png());
+            if (state.FailSave) throw new IOException("synthetic remote failure");
+            return Task.CompletedTask;
+        }
+        public Task<byte[]?> ReadAsync(string name, CancellationToken ct) => Task.FromResult(state.Files.GetValueOrDefault(name));
+        public Task DeleteAsync(string name) { state.Files.Remove(name); return Task.CompletedTask; }
     }
     private static async Task<HttpResponseMessage> Command(HttpClient browser, HttpMethod method, string route, object? body = null, string? etag = null)
     {
@@ -81,11 +105,11 @@ public sealed class CatalogTests(SqlFixture sql)
     }
     private static async Task<JsonElement> AddVariant(HttpClient admin, JsonElement product, string? sku = null, string color = "Black", int storage = 128, decimal price = 100) =>
         await Created(await Command(admin, HttpMethod.Post, "admin/products/" + Id(product) + "/variants", Variant(sku ?? Guid.NewGuid().ToString("N"), color, storage, price)));
-    private static async Task<HttpResponseMessage> Upload(HttpClient browser, string productId, byte[] bytes, string? variantId = null, string filename = "image.png", string contentType = "image/png")
+    private static async Task<HttpResponseMessage> Upload(HttpClient browser, string productId, byte[] bytes, string? variantId = null, string filename = "image.png", string contentType = "image/png", Guid? operationKey = null)
     {
         var token = (await browser.GetFromJsonAsync<JsonElement>("/api/v1/auth/csrf")).GetProperty("token").GetString();
         using var form = new MultipartFormDataContent(); var file = new ByteArrayContent(bytes); file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-        form.Add(file, "file", filename); form.Add(new StringContent("Synthetic alt"), "altText"); form.Add(new StringContent("0"), "sortOrder");
+        form.Add(new StringContent((operationKey ?? Guid.NewGuid()).ToString()), "operationKey"); form.Add(file, "file", filename); form.Add(new StringContent("Synthetic alt"), "altText"); form.Add(new StringContent("0"), "sortOrder");
         if (variantId is not null) form.Add(new StringContent(variantId), "variantId");
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/products/" + productId + "/images") { Content = form };
         request.Headers.Add("X-CSRF-TOKEN", token); return await browser.SendAsync(request);
@@ -195,7 +219,13 @@ public sealed class CatalogTests(SqlFixture sql)
         var image = await Created(await Upload(admin, Id(catalog.Product), png, Id(variant), "../../evil.png"));
         var url = image.GetProperty("imageUrl").GetString()!; Assert.DoesNotContain("evil", url); Assert.Single(Directory.GetFiles(host.DirectoryPath));
         var response = await publicClient.GetAsync(url); Assert.Equal(HttpStatusCode.OK, response.StatusCode); Assert.Equal("image/png", response.Content.Headers.ContentType!.MediaType); Assert.Contains("nosniff", response.Headers.GetValues("X-Content-Type-Options"));
+        var tag = response.Headers.ETag!.Tag;
+        Assert.True(response.Headers.CacheControl!.Private); Assert.True(response.Headers.CacheControl.NoCache);
+        using (var conditional = new HttpRequestMessage(HttpMethod.Get, url)) { conditional.Headers.TryAddWithoutValidation("If-None-Match", tag); Assert.Equal(HttpStatusCode.NotModified, (await publicClient.SendAsync(conditional)).StatusCode); }
+        Assert.Equal(HttpStatusCode.OK, (await publicClient.GetAsync(url + "?size=thumbnail")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await publicClient.GetAsync(url + "?size=unbounded")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await Command(admin, HttpMethod.Patch, "admin/variants/" + Id(variant), Variant(variant.GetProperty("sku").GetString()!, active: false), Version(variant))).StatusCode);
+        using (var conditional = new HttpRequestMessage(HttpMethod.Get, url)) { conditional.Headers.TryAddWithoutValidation("If-None-Match", tag); Assert.Equal(HttpStatusCode.NotFound, (await publicClient.SendAsync(conditional)).StatusCode); }
         Assert.Equal(HttpStatusCode.NotFound, (await publicClient.GetAsync(url)).StatusCode); Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync(url)).StatusCode);
         var visible = await publicClient.GetFromJsonAsync<JsonElement>("/api/v1/products/" + catalog.Slug); Assert.Single(visible.GetProperty("variants").EnumerateArray()); Assert.Empty(visible.GetProperty("images").EnumerateArray());
         Assert.Equal(HttpStatusCode.NoContent, (await Command(admin, HttpMethod.Delete, "admin/product-images/" + Id(image))).StatusCode);
@@ -212,6 +242,95 @@ public sealed class CatalogTests(SqlFixture sql)
         var result = await Upload(admin, Id(catalog.Product), Png()); Assert.Equal(HttpStatusCode.ServiceUnavailable, result.StatusCode);
         await using var db = sql.CreateContext(); Assert.False(await db.ProductImages.AnyAsync(x => x.ProductId == long.Parse(Id(catalog.Product))));
         Assert.Empty(Directory.GetFiles(host.DirectoryPath));
+    }
+    [Fact]
+    public async Task CloudProviderUploadDownloadAndDeleteKeepManagedVisibilityAndDoNotHoldSqlDuringUpload()
+    {
+        var state = new ProbeCloudState(); using var host = new Host(sql.ConnectionString, cloudState: state);
+        using var admin = await Account(host); using var customer = await Account(host, false); using var guest = host.Browser();
+        var catalog = await Catalog(admin); await AddVariant(admin, catalog.Product);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Upload(customer, Id(catalog.Product), [255, 216, 255], filename: "test.jpg", contentType: "image/jpeg")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Upload(admin, Id(catalog.Product), [255, 216, 255], filename: "test.png", contentType: "image/png")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Upload(admin, Id(catalog.Product), [255, 216, 255], variantId: "9223372036854775807", filename: "test.jpg", contentType: "image/jpeg")).StatusCode);
+        Assert.Empty(state.Files);
+        var image = await Created(await Upload(admin, Id(catalog.Product), [255, 216, 255], filename: "test.jpg", contentType: "image/jpeg"));
+        Assert.True(state.SaveOutsideTransaction); var url = image.GetProperty("imageUrl").GetString()!; Assert.Contains("/cloud-", url);
+        using var download = await guest.GetAsync(url + "?download=true"); Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("image/png", download.Content.Headers.ContentType!.MediaType); Assert.Equal("attachment", download.Content.Headers.ContentDisposition!.DispositionType);
+        Assert.Equal(HttpStatusCode.OK, (await Command(admin, HttpMethod.Patch, "admin/products/" + Id(catalog.Product), Product(catalog.Brand, catalog.Category, catalog.Slug, false), Version(catalog.Product))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await guest.GetAsync(url + "?download=true")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Command(admin, HttpMethod.Delete, "admin/product-images/" + Id(image))).StatusCode);
+        Assert.Empty(state.Files); Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync(url)).StatusCode);
+    }
+    [Fact]
+    public async Task CloudLostAcknowledgmentRetainsStableAssetAndRetryCompletesOnce()
+    {
+        var state = new ProbeCloudState { FailSave = true }; using var host = new Host(sql.ConnectionString, cloudState: state); using var admin = await Account(host);
+        var catalog = await Catalog(admin); var key = Guid.NewGuid(); var productId = Id(catalog.Product);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await Upload(admin, productId, Png(), operationKey: key)).StatusCode);
+        Assert.Single(state.Files); var name = state.Files.Keys.Single();
+        await using var db = sql.CreateContext(); Assert.False(await db.ProductImages.AnyAsync(x => x.ProductId == long.Parse(productId)));
+        Assert.Null((await db.CatalogImageUploads.SingleAsync(x => x.OperationKey == key)).ImageId);
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.GetAsync($"/api/v1/admin/products/{productId}/image-uploads/{key}")).StatusCode);
+        state.FailSave = false;
+        var image = await Created(await Upload(admin, productId, Png(), operationKey: key));
+        Assert.EndsWith(name, image.GetProperty("imageUrl").GetString()); Assert.Single(state.Files);
+        Assert.Equal(Id(image), Id(await Created(await Upload(admin, productId, Png(), operationKey: key))));
+        Assert.Equal(Id(image), Id(await admin.GetFromJsonAsync<JsonElement>($"/api/v1/admin/products/{productId}/image-uploads/{key}")));
+        Assert.Single(await db.ProductImages.Where(x => x.ProductId == long.Parse(productId)).ToListAsync());
+    }
+    [Fact]
+    public async Task ConcurrentUploadReplayMismatchAndDeletedReplayDoNotCreateDuplicates()
+    {
+        var state = new ProbeCloudState(); using var host = new Host(sql.ConnectionString, cloudState: state); using var admin = await Account(host);
+        var catalog = await Catalog(admin); var productId = Id(catalog.Product); var key = Guid.NewGuid();
+        var requests = await Task.WhenAll(Upload(admin, productId, Png(), operationKey: key), Upload(admin, productId, Png(), operationKey: key));
+        var first = await Created(requests[0]); var replay = await Created(requests[1]); Assert.Equal(Id(first), Id(replay)); Assert.Single(state.Files);
+        await using var db = sql.CreateContext(); Assert.Single(await db.ProductImages.Where(x => x.ProductId == long.Parse(productId)).ToListAsync());
+        Assert.Equal(HttpStatusCode.Conflict, (await Upload(admin, productId, Png(metadata: true), operationKey: key)).StatusCode);
+        var variant = await AddVariant(admin, catalog.Product);
+        Assert.Equal(HttpStatusCode.Conflict, (await Upload(admin, productId, Png(), Id(variant), operationKey: key)).StatusCode);
+        Assert.Single(state.Files);
+        Assert.Equal(HttpStatusCode.NoContent, (await Command(admin, HttpMethod.Delete, "admin/product-images/" + Id(first))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Upload(admin, productId, Png(), operationKey: key)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.GetAsync($"/api/v1/admin/products/{productId}/image-uploads/{key}")).StatusCode);
+        Assert.Empty(state.Files); Assert.False(await db.ProductImages.AnyAsync(x => x.ProductId == long.Parse(productId)));
+        Assert.Equal(long.Parse(Id(first)), (await db.CatalogImageUploads.AsNoTracking().SingleAsync(x => x.OperationKey == key)).ImageId);
+    }
+    [Fact]
+    public async Task FailedCompletionTransactionRollsBackImageAndKeepsPendingOperationForRetry()
+    {
+        var state = new ProbeCloudState(); using var host = new Host(sql.ConnectionString, cloudState: state); using var admin = await Account(host);
+        var catalog = await Catalog(admin); var productId = Id(catalog.Product); var key = Guid.NewGuid(); var constraint = "SyntheticUpload_" + key.ToString("N");
+        await using var db = sql.CreateContext();
+        // DDL identifiers and constant are generated UUIDs, never caller input.
+        var addConstraintSql = $"ALTER TABLE dbo.CatalogImageUploads ADD CONSTRAINT [{constraint}] CHECK (OperationKey <> '{key}' OR ImageId IS NULL)";
+        var dropConstraintSql = $"ALTER TABLE dbo.CatalogImageUploads DROP CONSTRAINT [{constraint}]";
+        await db.Database.ExecuteSqlRawAsync(addConstraintSql);
+        try
+        {
+            Assert.Equal(HttpStatusCode.Conflict, (await Upload(admin, productId, Png(), operationKey: key)).StatusCode);
+            Assert.False(await db.ProductImages.AnyAsync(x => x.ProductId == long.Parse(productId)));
+            Assert.Null((await db.CatalogImageUploads.AsNoTracking().SingleAsync(x => x.OperationKey == key)).ImageId); Assert.Empty(state.Files);
+        }
+        finally { await db.Database.ExecuteSqlRawAsync(dropConstraintSql); }
+        var image = await Created(await Upload(admin, productId, Png(), operationKey: key));
+        Assert.Equal(long.Parse(Id(image)), (await db.CatalogImageUploads.AsNoTracking().SingleAsync(x => x.OperationKey == key)).ImageId);
+        Assert.Single(await db.ProductImages.Where(x => x.ProductId == long.Parse(productId)).ToListAsync()); Assert.Single(state.Files);
+    }
+    [Fact]
+    public async Task UploadRecoveryIsScopedToActorAndProductAndRequiresAdmin()
+    {
+        using var host = new Host(sql.ConnectionString); using var admin = await Account(host); using var otherAdmin = await Account(host); using var customer = await Account(host, false); using var guest = host.Browser();
+        var catalog = await Catalog(admin); var other = await Catalog(admin); var key = Guid.NewGuid(); var productId = Id(catalog.Product);
+        var image = await Created(await Upload(admin, productId, Png(), operationKey: key)); var route = $"/api/v1/admin/products/{productId}/image-uploads/{key}";
+        Assert.Equal(HttpStatusCode.Unauthorized, (await guest.GetAsync(route)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync(route)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await otherAdmin.GetAsync(route)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"/api/v1/admin/products/{Id(other.Product)}/image-uploads/{key}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"/api/v1/admin/products/{productId}/image-uploads/{Guid.NewGuid()}")).StatusCode);
+        Assert.Equal(Id(image), Id(await admin.GetFromJsonAsync<JsonElement>(route)));
     }
     [Fact]
     public async Task PngDecoderRejectsCorruptionBombsAndStripsAncillaryPayloads()

@@ -21,6 +21,14 @@ export class ApiError extends Error {
 }
 
 function errorMessage(status: number, code: string): string {
+  if (code === 'IMAGE_UPLOAD_PENDING' || code === 'IMAGE_UPLOAD_BUSY') return 'Yêu cầu tải ảnh chưa hoàn tất. Kiểm tra kết quả hoặc thử lại cùng ảnh.'
+  if (code === 'IMAGE_UPLOAD_NOT_FOUND') return 'Chưa tìm thấy kết quả. Thử lại bằng cùng ảnh và mã yêu cầu đang lưu.'
+  if (code === 'IMAGE_UPLOAD_PAYLOAD_MISMATCH') return 'Ảnh hoặc thông tin khác yêu cầu trước. Chọn lại đúng file ban đầu hoặc kiểm tra kết quả.'
+  if (code === 'IMAGE_UPLOAD_ALREADY_DELETED') return 'Ảnh của yêu cầu này đã bị xóa; thử lại không tạo lại ảnh.'
+  if (code === 'SEPAY_UNAVAILABLE') return 'SePay Sandbox chưa được cấu hình. Vui lòng liên hệ cửa hàng.'
+  if (code === 'PAYMENT_NOT_ALLOWED') return 'Đơn đã hết hạn, đã hủy hoặc đã nhận đủ tiền. Hãy kiểm tra lại trạng thái đơn.'
+  if (code === 'PAYMENT_AMOUNT_EXCEEDED') return 'Số tiền vượt phần còn phải thu hoặc phương thức không phải COD. Hãy tải lại trạng thái tiền.'
+  if (code === 'PAYMENT_REFERENCE_CONFLICT') return 'Mã giao dịch này đã được ghi nhận. Hãy kiểm tra lại khoản thanh toán.'
   if (code === 'INVALID_FILTER') return 'Bộ lọc không hợp lệ. Kiểm tra ngày, trạng thái và ID khách hàng.'
   if (code === 'OPERATION_KEY_MISMATCH') return 'Yêu cầu này đã được dùng cho nội dung khác. Vui lòng kiểm tra lại.'
   if (code === 'CHECKOUT_STORAGE_UNAVAILABLE') return 'Không thể lưu hoặc đọc phiên đặt hàng. Kiểm tra quyền lưu trữ trình duyệt; nếu đã gửi yêu cầu, hãy tra cứu đơn qua email trước khi đặt lại.'
@@ -49,7 +57,7 @@ function errorMessage(status: number, code: string): string {
   if (code === 'VERSION_MISMATCH') return 'Thông tin đã được người khác thay đổi. Tải phiên bản mới trước khi lưu lại.'
   if (code === 'CATALOG_BUSY') return 'Danh mục đang được cập nhật. Vui lòng thử lại sau.'
   if (code === 'IMAGE_UNAVAILABLE') return 'Chưa thể lưu ảnh trong môi trường này. Vui lòng thử lại sau.'
-  if (code === 'INVALID_IMAGE') return 'Ảnh không hợp lệ. Dùng PNG RGB/RGBA 8 bit, không interlace, tối đa 2048 × 2048.'
+  if (code === 'INVALID_IMAGE') return 'Ảnh không hợp lệ. Dùng JPG/JPEG, PNG, WebP, GIF, BMP hoặc SVG hợp lệ.'
   if (code === 'IMAGE_TOO_LARGE') return 'Ảnh vượt quá giới hạn 2 MiB.'
   if (code === 'INVALID_CREDENTIALS') return 'Email hoặc mật khẩu không hợp lệ, hoặc tài khoản đang tạm khóa.'
   if (code === 'EMAIL_NOT_VERIFIED') return 'Vui lòng xác minh email trước khi đăng nhập.'

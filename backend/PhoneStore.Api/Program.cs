@@ -97,11 +97,16 @@ builder.Services.AddScoped<PhoneStore.Api.Services.Catalog.CatalogService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.InventoryManagement.InventoryService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.InventoryManagement.InventoryExceptionFilter>();
 builder.Services.AddScoped<PhoneStore.Api.Services.Catalog.CatalogExceptionFilter>();
-builder.Services.AddSingleton<PhoneStore.Api.Services.Catalog.ICatalogImageStore, PhoneStore.Api.Services.Catalog.LocalCatalogImageStore>();
+builder.Services.AddSingleton<PhoneStore.Api.Services.Catalog.ICatalogImageStore>(services =>
+    new PhoneStore.Api.Services.Catalog.CachedCatalogImageStore(string.Equals(builder.Configuration["Catalog:ImageProvider"], "Cloudinary", StringComparison.OrdinalIgnoreCase)
+        ? new PhoneStore.Api.Services.Catalog.CloudinaryCatalogImageStore(services.GetRequiredService<IHostEnvironment>(), builder.Configuration)
+        : new PhoneStore.Api.Services.Catalog.LocalCatalogImageStore(services.GetRequiredService<IHostEnvironment>(), builder.Configuration)));
 builder.Services.AddSingleton<IAuthEmailSender, LocalAuthEmailSender>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Payments.PaymentService>();
+builder.Services.AddSingleton<PhoneStore.Api.Services.Payments.SePaySandbox>();
 builder.Services.AddRateLimiter(options =>
 {
-    foreach (var (name, defaultLimit) in new[] { ("auth", 20), ("csrf", 60), ("quote", 60), ("checkout", 20), ("guest", 20) })
+    foreach (var (name, defaultLimit) in new[] { ("auth", 20), ("csrf", 60), ("quote", 60), ("checkout", 20), ("guest", 20), ("payment", 60) })
         options.AddPolicy(name, context => RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
             {
@@ -169,7 +174,16 @@ app.Use(async (context, next) =>
         if (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method)
             || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method))
         {
-            try { await context.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(context); }
+            try {
+                if (context.GetEndpoint()?.Metadata.GetMetadata<PhoneStore.Api.Services.Payments.SePayIpnAttribute>() is not null) {
+                    var values = context.Request.Headers["X-Secret-Key"];
+                    context.RequestServices.GetRequiredService<PhoneStore.Api.Services.Payments.SePaySandbox>().CheckIpn(values.Count == 1 ? values[0] : null);
+                } else await context.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(context);
+            }
+            catch (PhoneStore.Api.Services.Checkout.CheckoutException failure) {
+                await Results.Problem(statusCode: failure.Status, title: failure.Message, extensions: new Dictionary<string, object?> { ["code"] = failure.Code, ["traceId"] = context.TraceIdentifier }).ExecuteAsync(context);
+                return;
+            }
             catch (AntiforgeryValidationException)
             {
                 await Results.Problem(statusCode: 403, title: "Phiên làm việc đã thay đổi. Vui lòng tải lại trang.",

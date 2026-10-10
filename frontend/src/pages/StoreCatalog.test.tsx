@@ -31,6 +31,6 @@ test('variant selection changes actual price, availability and only matching ima
     { id: '2', sku: 'B', color: 'White', storageGb: 256, ramGb: 8, price: 2000000, available: 0 },
   ], images: [{ id: '1', variantId: '2', sortOrder: 0, altText: 'White image', imageUrl }] })
   const view = render(<CartProvider><MemoryRouter initialEntries={['/products/test']}><Routes><Route path="/products/:slug" element={<StoreProductPage />} /></Routes></MemoryRouter></CartProvider>)
-  await screen.findByText('Còn 3 sản phẩm'); expect(screen.queryByAltText('White image')).toBeNull(); expect(view.container.querySelector('script')).toBeNull()
+  await screen.findByText('Chọn phiên bản để xem giá'); expect(screen.queryAllByRole('radio', { checked: true })).toHaveLength(0); expect(screen.getByRole('button', { name: 'Thêm vào giỏ hàng' }).matches(':disabled')).toBe(true); expect(screen.queryByAltText('White image')).toBeNull(); expect(view.container.querySelector('script')).toBeNull()
   fireEvent.click(screen.getByRole('radio', { name: 'White · 256 GB · RAM 8 GB' })); expect(screen.getByText('Hết hàng')).toBeTruthy(); expect(screen.getByText('2.000.000 ₫')).toBeTruthy(); expect(screen.getByAltText('White image')).toBeTruthy()
 })

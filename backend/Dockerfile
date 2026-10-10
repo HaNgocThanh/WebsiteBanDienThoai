@@ -14,7 +14,8 @@ RUN dotnet publish PhoneStore.Api/PhoneStore.Api.csproj -c Release -o /app/publi
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
-RUN mkdir -p /home/app/.aspnet/DataProtection-Keys && chown -R app:app /home/app/.aspnet
+RUN mkdir -p /home/app/.aspnet/DataProtection-Keys /app/.local-mailbox \
+    && chown -R app:app /home/app/.aspnet /app/.local-mailbox
 ENV HOME=/home/app
 ENV ASPNETCORE_HTTP_PORTS=8080
 COPY --from=build /app/publish .

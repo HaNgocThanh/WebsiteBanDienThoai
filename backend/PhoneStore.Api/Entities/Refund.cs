@@ -12,14 +12,14 @@ public class Refund
     public string? Reference { get; set; }
     public string EventKey { get; set; } = string.Empty;
     public byte[] RequestHash { get; set; } = [];
-    public Guid CreatedByUserId { get; set; }
+    public Guid? CreatedByUserId { get; set; }
     public Guid? CompletedByUserId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public byte[] Version { get; set; } = [];
 
     public Payment Payment { get; set; } = null!;
-    public ApplicationUser CreatedByUser { get; set; } = null!;
+    public ApplicationUser? CreatedByUser { get; set; }
     public ApplicationUser? CompletedByUser { get; set; }
 }
 

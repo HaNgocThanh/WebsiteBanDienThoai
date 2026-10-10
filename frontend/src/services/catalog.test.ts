@@ -9,6 +9,7 @@ test('catalog preserves bigint strings and validates money and rowversion', () =
 })
 test('managed images reject external or escaped paths', () => {
   const image = { id: '1', variantId: null, altText: 'Ảnh', sortOrder: 0, imageUrl: '/api/v1/catalog-images/' + 'a'.repeat(32) + '.png' }
+  expect(decodeImage({ ...image, imageUrl: '/api/v1/catalog-images/cloud-' + 'a'.repeat(32) + '.png' }).imageUrl).toContain('/cloud-')
   expect(decodeImage(image).imageUrl).toBe(image.imageUrl)
   for (const imageUrl of ['https://foreign.invalid/photo.png', '//foreign.invalid/a.png', 'javascript:alert(1)', '/api/v1/catalog-images/../secret', '/uploads/a.png']) expect(() => decodeImage({ ...image, imageUrl })).toThrow()
 })

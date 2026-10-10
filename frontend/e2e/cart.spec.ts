@@ -17,13 +17,13 @@ test.beforeAll(async ({ browser }) => {
   product = await createProduct(page); await addVariant(page, 'CART-' + product.suffix, 'Đen')
   const dto = await (await page.request.get('/api/v1/admin/products/' + product.id)).json() as { variants: { id: string }[] }; id = dto.variants[0].id
   const token = (await (await page.request.get('/api/v1/auth/csrf')).json() as { token: string }).token
-  const upload = await page.request.post(`/api/v1/admin/products/${product.id}/images`, { headers: { 'X-CSRF-TOKEN': token }, multipart: { file: { name: 'synthetic.png', mimeType: 'image/png', buffer: png() }, variantId: id, altText: 'Synthetic selected variant', sortOrder: '0' } })
+  const upload = await page.request.post(`/api/v1/admin/products/${product.id}/images`, { headers: { 'X-CSRF-TOKEN': token }, multipart: { operationKey: randomUUID(), file: { name: 'synthetic.png', mimeType: 'image/png', buffer: png() }, variantId: id, altText: 'Synthetic selected variant', sortOrder: '0' } })
   expect(upload.status()).toBe(201); imageUrl = (await upload.json() as { imageUrl: string }).imageUrl
   expect((await page.request.post(`/api/v1/admin/inventory/${id}/receipts`, { data: { quantity: 5, reason: 'Synthetic cart acceptance', operationKey: randomUUID() }, headers: { 'X-CSRF-TOKEN': token } })).status()).toBe(201)
   await context.close()
 })
 async function add(page: Page) {
-  await page.goto('/products/phone-' + product.suffix)
+  await page.goto('/products/phone-' + product.suffix); await page.getByRole('radio', { name: /Đen/ }).check()
   await page.getByRole('button', { name: 'Thêm vào giỏ hàng', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Đã thêm phiên bản' })).toBeVisible(); await page.getByRole('link', { name: 'Xem giỏ hàng' }).click()
 }
@@ -31,7 +31,7 @@ async function add(page: Page) {
 test('guest cart edits quantities without shipping fields or quote; SQL stock is unchanged', async ({ page, browser }) => {
   await add(page)
   await expect(page.locator('.cart-items').getByRole('heading', { name: product.name })).toBeVisible()
-  const image = page.locator('.cart-image img'); await expect(image).toHaveAttribute('src', imageUrl)
+  const image = page.locator('.cart-image img'); await expect(image).toHaveAttribute('src', imageUrl + '?size=thumbnail')
   await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true)
   await expect(page.locator('.cart-quote')).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Tiến hành thanh toán' })).toBeVisible()
@@ -44,7 +44,7 @@ test('guest cart edits quantities without shipping fields or quote; SQL stock is
   await page.getByRole('spinbutton').press('Enter')
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), cartKey)).toEqual([{ variantId: id, quantity: 2 }])
   await page.reload(); await expect(page.getByRole('spinbutton')).toHaveValue('2'); await expect(page.locator('.cart-quote')).toHaveCount(0)
-  await expect(page.locator('.cart-items').getByRole('heading', { name: product.name })).toBeVisible(); await expect(page.locator('.cart-image img')).toHaveAttribute('src', imageUrl)
+  await expect(page.locator('.cart-items').getByRole('heading', { name: product.name })).toBeVisible(); await expect(page.locator('.cart-image img')).toHaveAttribute('src', imageUrl + '?size=thumbnail')
   for (const width of [360, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     const remove = page.locator('.cart-remove'), heading = page.locator('.cart-item-heading h2')
@@ -102,13 +102,13 @@ test('each cart variant has its own name/image and right-side trash button remov
   const dto = await (await admin.request.get('/api/v1/admin/products/' + product.id)).json() as { variants: { id: string; color: string }[] }
   const second = dto.variants.find(v => v.color === 'Xanh')!.id
   const token = (await (await admin.request.get('/api/v1/auth/csrf')).json() as { token: string }).token
-  const upload = await admin.request.post(`/api/v1/admin/products/${product.id}/images`, { headers: { 'X-CSRF-TOKEN': token }, multipart: { file: { name: 'synthetic-blue.png', mimeType: 'image/png', buffer: png() }, variantId: second, altText: 'Synthetic blue variant', sortOrder: '0' } })
+  const upload = await admin.request.post(`/api/v1/admin/products/${product.id}/images`, { headers: { 'X-CSRF-TOKEN': token }, multipart: { operationKey: randomUUID(), file: { name: 'synthetic-blue.png', mimeType: 'image/png', buffer: png() }, variantId: second, altText: 'Synthetic blue variant', sortOrder: '0' } })
   expect(upload.status()).toBe(201); const secondImage = (await upload.json() as { imageUrl: string }).imageUrl
   await context.close()
   await page.goto('/'); await page.evaluate(({ key, first, second }) => localStorage.setItem(key, JSON.stringify([{ variantId: first, quantity: 1 }, { variantId: second, quantity: 2 }])), { key: cartKey, first: id, second }); await page.goto('/cart')
   const rows = page.locator('.cart-items > li'); await expect(rows).toHaveCount(2)
   await expect(rows.nth(0)).toContainText('Đen · 128 GB'); await expect(rows.nth(1)).toContainText('Xanh · 256 GB')
-  await expect(rows.nth(0).locator('img')).toHaveAttribute('src', imageUrl); await expect(rows.nth(1).locator('img')).toHaveAttribute('src', secondImage)
+  await expect(rows.nth(0).locator('img')).toHaveAttribute('src', imageUrl + '?size=thumbnail'); await expect(rows.nth(1).locator('img')).toHaveAttribute('src', secondImage + '?size=thumbnail')
   await rows.nth(1).getByRole('button', { name: /^Xóa / }).click(); await expect(rows).toHaveCount(1)
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), cartKey)).toEqual([{ variantId: id, quantity: 1 }])
   await expect(rows.nth(0)).toContainText('Đen · 128 GB')
