@@ -80,6 +80,9 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddScoped<PhoneStore.Api.Services.OrderManagement.OrderReadService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.OrderManagement.OrderTransitionService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.OrderManagement.AfterSaleService>();
+builder.Services.AddOptions<PhoneStore.Api.Services.OrderManagement.OrderExpiryOptions>().Bind(builder.Configuration.GetSection("OrderExpiry")).ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddScoped<PhoneStore.Api.Services.OrderManagement.OrderExpiryProcessor>();
+builder.Services.AddHostedService<PhoneStore.Api.Services.OrderManagement.OrderExpiryWorker>();
 builder.Services.AddScoped<AuthBootstrap>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.ProfileService>();

@@ -43,6 +43,7 @@ public sealed class AuthFactory(string connection, string environment = "Testing
         {
             ["ConnectionStrings:DefaultConnection"] = connection,
             ["Outbox:Enabled"] = "false",
+            ["OrderExpiry:Enabled"] = "false",
             ["Auth:RateLimit:auth"] = limit.ToString(), ["Auth:RateLimit:csrf"] = "1000"
         }));
         builder.ConfigureTestServices(services =>

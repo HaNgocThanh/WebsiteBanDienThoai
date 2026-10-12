@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test'
 import type { BrowserContext, Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { setupAdmin, createProduct, addVariant } from './adminHelpers.js'
 let state: Awaited<ReturnType<BrowserContext['storageState']>>, variantId: string
 async function post(page: Page, route: string, data?: unknown, headers = {}) { const csrf = (await (await page.request.get('/api/v1/auth/csrf')).json() as { token: string }).token; return page.request.post('/api/v1/' + route, { data, headers: { 'X-CSRF-TOKEN': csrf, ...headers } }) }
@@ -124,4 +126,29 @@ test('shipping recall requires real goods evidence before Admin restocks and can
   await saleForm(page, title, 'Synthetic recovered receipt'); await approve.getByRole('button', { name: title, exact: true }).click(); await expect(page.getByRole('heading', { name: 'Yêu cầu thu hồi · Đã chấp thuận', exact: true })).toBeVisible()
   const detail = await (await page.request.get('/api/v1/admin/orders/' + order.id)).json() as { snapshot: { status: string }; reservations: { status: string }[] }; expect(detail.snapshot.status).toBe('Cancelled'); expect(detail.reservations.every(r => r.status === 'Consumed')).toBe(true)
   await context.close()
+})
+
+test('G4 bank transfer completes through actual Admin UI after verified Sandbox adapter payment', async ({ browser }) => {
+  const context = await browser.newContext({ storageState: state }), page = await context.newPage(); const { order } = await place(page, 'BankTransfer', true)
+  const checkout = await (await post(page, 'me/orders/' + order.id + '/sepay-checkout')).json() as { invoice: string; amount: number }
+  expect((await page.request.post('/api/v1/payments/sepay/ipn', { headers: { 'X-Secret-Key': 'synthetic-e2e-ipn' }, data: { notification_type: 'ORDER_PAID', order: { order_invoice_number: checkout.invoice, order_status: 'CAPTURED', order_currency: 'VND', order_amount: String(checkout.amount) }, transaction: { id: randomUUID(), transaction_id: randomUUID().replaceAll('-', ''), payment_method: 'BANK_TRANSFER', transaction_type: 'PAYMENT', transaction_status: 'APPROVED', transaction_currency: 'VND', transaction_amount: String(checkout.amount) } } })).status()).toBe(200)
+  await page.goto('/admin/orders/' + order.id)
+  for (const label of ['Đang giao', 'Đã giao', 'Hoàn tất']) {
+    const button = page.getByRole('button', { name: 'Chuyển sang ' + label, exact: true }); await expect(button).toBeVisible(); await page.getByLabel('Lý do cập nhật trạng thái').selectOption({ index: 1 }); await page.getByLabel('Tôi đã kiểm tra và xác nhận bước xử lý này.').check(); await button.click()
+  }
+  await expect(page.getByText('Hoàn tất · Chuyển khoản', { exact: true })).toBeVisible(); await page.goto('/account/orders/' + order.id); await expect(page.getByText('Hoàn tất · Chuyển khoản', { exact: true })).toBeVisible(); await expect(page.getByText('Đã nhận đủ', { exact: true })).toBeVisible(); await context.close()
+})
+test('G4 real hosted expiry cancels unpaid bank order, releases held stock and sends one notification', async ({ browser }) => {
+  const database = /(?:^|;)Database=(PhoneStore_Test_[0-9a-f]{32})(?:;|$)/.exec(process.env.PHONESTORE_E2E_SQL ?? '')?.[1]
+  if (!database) throw new Error('Expiry fixture requires isolated GUID test DB')
+  const context = await browser.newContext({ storageState: state }), page = await context.newPage(); const { order } = await place(page, 'BankTransfer', true)
+  if (!/^[1-9][0-9]*$/.test(order.id)) throw new Error('Invalid fixture order id')
+  // Only this synthetic order's clock is moved; production time/policy and worker/API stay real.
+  const query = `UPDATE Orders SET PaymentDueAt=DATEADD(SECOND,-1,SYSUTCDATETIME()) WHERE Id=${order.id} AND Status='Reviewing' AND PaymentMethod='BankTransfer'; UPDATE r SET ExpiresAt=DATEADD(SECOND,-1,SYSUTCDATETIME()) FROM StockReservations r JOIN OrderItems i ON i.Id=r.OrderItemId WHERE i.OrderId=${order.id} AND r.Status='Active';`
+  await promisify(execFile)('docker', ['compose', 'exec', '-T', 'db', 'sh', '-c', 'export SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"; exec /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -I -d "$1" -Q "$2"', 'expiry-fixture', database, query], { cwd: path.resolve('..'), timeout: 15000, windowsHide: true })
+  await expect.poll(async () => ((await (await page.request.get('/api/v1/admin/orders/' + order.id)).json()) as { snapshot: { status: string } }).snapshot.status, { timeout: 15000 }).toBe('Cancelled')
+  const detail = await (await page.request.get('/api/v1/admin/orders/' + order.id)).json() as { reservations: { status: string }[]; refunds: unknown[]; history: { toStatus: string; actorType: string; actorUserId: string | null }[] }
+  expect(detail.reservations.every(r => r.status === 'Released')).toBe(true); expect(detail.refunds).toHaveLength(0); const history = detail.history.filter(h => h.toStatus === 'Cancelled'); expect(history).toHaveLength(1); expect(history[0]).toMatchObject({ actorType: 'System', actorUserId: null })
+  await expect.poll(async () => ((await (await page.request.get('/api/v1/admin/notifications?pageSize=100')).json()) as { items: { type: string; orderId: string }[] }).items.filter(n => n.type === 'OrderPaymentExpired' && n.orderId === order.id).length, { timeout: 15000 }).toBe(1)
+  await page.goto('/account/orders/' + order.id); await expect(page.getByText('Đã hủy · Chuyển khoản', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: 'Thanh toán qua SePay Sandbox', exact: true })).toHaveCount(0); await page.reload(); await expect(page.getByText('Đã hủy · Chuyển khoản', { exact: true })).toBeVisible(); await context.close()
 })

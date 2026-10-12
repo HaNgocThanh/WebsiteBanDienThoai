@@ -65,7 +65,7 @@ public sealed partial class PaymentTests(SqlFixture sql)
     }
 
 
-    private sealed class Host(string connection, bool configured = true) : IDisposable
+    private sealed class Host(string connection, bool configured = true, bool expiry = false) : IDisposable
     {
         private readonly AuthFactory auth = new(connection);
         public OrderTestClock Clock { get; } = new();
@@ -74,7 +74,8 @@ public sealed partial class PaymentTests(SqlFixture sql)
             builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string,string?> {
                 ["SePay:Sandbox:MerchantId"] = configured ? "SYNTHETIC-MERCHANT" : "",
                 ["SePay:Sandbox:SecretKey"] = "synthetic-signing-key", ["SePay:Sandbox:IpnSecret"] = "synthetic-ipn-key",
-                ["SePay:Sandbox:PublicBaseUrl"] = "https://synthetic.example.invalid", ["Auth:RateLimit:payment"] = "1000", ["Auth:RateLimit:checkout"] = "1000", ["Auth:RateLimit:quote"] = "1000"
+                ["SePay:Sandbox:PublicBaseUrl"] = "https://synthetic.example.invalid", ["Auth:RateLimit:payment"] = "1000", ["Auth:RateLimit:checkout"] = "1000", ["Auth:RateLimit:quote"] = "1000",
+                ["OrderExpiry:Enabled"] = expiry ? "true" : "false", ["OrderExpiry:PollIntervalSeconds"] = "1"
             }));
             builder.ConfigureTestServices(services => { services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(Clock); });
         });

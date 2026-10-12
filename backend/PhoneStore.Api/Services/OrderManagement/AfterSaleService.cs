@@ -14,6 +14,24 @@ public sealed class AfterSaleService(AppDbContext db, TimeProvider clock, PhoneS
     private DateTime Now => new(clock.GetUtcNow().UtcTicks / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, DateTimeKind.Utc);
     private static CheckoutException Error(int status, string code) => new(status, code, "Thao tác hủy/hoàn tiền không hợp lệ. Kiểm tra trạng thái và tải lại thông tin.");
     private static bool Early(OrderStatus status) => status is OrderStatus.Placed or OrderStatus.Reviewing or OrderStatus.Approved;
+    public async Task<bool> ExpireAsync(long id, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var order = await db.Orders.FromSqlInterpolated($"SELECT * FROM [Orders] WITH (UPDLOCK,HOLDLOCK) WHERE [Id]={id}").SingleOrDefaultAsync(ct);
+        if (order is null || !Early(order.Status) || order.PaymentMethod != PaymentMethod.BankTransfer || order.PaymentDueAt is null || order.PaymentDueAt > Now)
+            return false;
+        var received = await db.Payments.Where(p => p.OrderId == id && p.Status == PaymentStatus.Confirmed).SumAsync(p => p.Amount, ct);
+        if (received >= order.GrandTotal) return false;
+        var dueAt = order.PaymentDueAt;
+        var hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { domain = "payment-hold-expiry-v1", id, dueAt })));
+        const string reason = "Hết thời hạn thanh toán chuyển khoản, chưa nhận đủ tiền";
+        var previous = order.Status;
+        await CancelAsync(order, new(null), reason, hash, false, ct);
+        order.UpdatedAt = Now;
+        db.AuditLogs.Add(new() { ActorUserId = null, Action = "OrderPaymentExpired", EntityType = "Order", EntityId = id.ToString(), Summary = "sha256:" + hash, CorrelationId = "OrderPaymentExpired:" + id, CreatedAt = Now });
+        db.OutboxMessages.Add(new() { EventKey = "OrderPaymentExpired:" + id, Type = "OrderPaymentExpired", PayloadJson = JsonSerializer.Serialize(new { version = 1, orderId = id.ToString(), fromStatus = previous.ToString(), toStatus = "Cancelled", reasonCode = "PAYMENT_HOLD_EXPIRED", dueAt }), CreatedAt = Now, NextAttemptAt = Now });
+        await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return true;
+    }
     private async Task AuthorizeAsync(Order order, AfterSaleAccess access, bool mutate, CancellationToken ct)
     {
         if (access.Admin && access.UserId is not null) return;
