@@ -21,6 +21,16 @@ export class ApiError extends Error {
 }
 
 function errorMessage(status: number, code: string): string {
+  if (code === 'INVALID_TRANSITION') return 'Bước xử lý không còn hợp lệ. Hãy tải lại đơn; không thể bỏ qua bước hoặc quay lại trạng thái trước.'
+  if (code === 'PAYMENT_REQUIRED') return 'Cần nhận đủ tiền và xử lý khoản hoàn đang chờ trước bước này.'
+  if (code === 'RESERVATION_INVALID') return 'Hàng giữ cho đơn đã thay đổi hoặc hết hạn. Hãy kiểm tra đơn và tồn kho.'
+  if (code === 'CANCELLATION_NOT_ALLOWED') return 'Trạng thái đơn không cho phép hủy hoặc duyệt thu hồi. Hãy tải lại đơn.'
+  if (code === 'CANCELLATION_PENDING') return 'Đơn đã có yêu cầu thu hồi đang chờ cửa hàng xử lý.'
+  if (code === 'GOODS_RECOVERY_REQUIRED') return 'Cần xác nhận đã nhận lại đầy đủ hàng và nhập chứng từ thu hồi.'
+  if (code === 'REFUND_NOT_ALLOWED') return 'Khoản tiền hoặc trạng thái đơn không cho phép thao tác hoàn tiền này.'
+  if (code === 'REFUND_LIMIT') return 'Số tiền hoàn vượt khoản đã nhận hoặc vượt phần tiền hàng/phí giao hàng còn có thể hoàn.'
+  if (code === 'REFUND_REFERENCE_REQUIRED') return 'Nhập mã giao dịch hoàn tiền hợp lệ: chữ, số hoặc các dấu . _ : / -.'
+  if (code === 'REFUND_REFERENCE_CONFLICT') return 'Mã giao dịch này đã được dùng để ghi nhận một khoản hoàn tiền khác.'
   if (code === 'IMAGE_UPLOAD_PENDING' || code === 'IMAGE_UPLOAD_BUSY') return 'Yêu cầu tải ảnh chưa hoàn tất. Kiểm tra kết quả hoặc thử lại cùng ảnh.'
   if (code === 'IMAGE_UPLOAD_NOT_FOUND') return 'Chưa tìm thấy kết quả. Thử lại bằng cùng ảnh và mã yêu cầu đang lưu.'
   if (code === 'IMAGE_UPLOAD_PAYLOAD_MISMATCH') return 'Ảnh hoặc thông tin khác yêu cầu trước. Chọn lại đúng file ban đầu hoặc kiểm tra kết quả.'

@@ -9,11 +9,12 @@ import { orders, orderStatuses } from '../services/orders'
 import type { GuestOrder } from '../services/orders'
 import { OrderReceipt } from './CheckoutPage'
 import { OrderPayments } from './OrderPayments'
+import { OrderAfterSale } from './OrderAfterSale'
 
 const failure = (e: unknown) => e instanceof ApiError ? e : new ApiError(0, 'NETWORK_ERROR')
 const neutral = 'Nếu thông tin phù hợp, bạn sẽ nhận được liên kết qua email. Hãy kiểm tra hộp thư và thư rác. Liên kết dùng một lần, có hiệu lực 1 giờ; gửi lại không kéo dài hạn thanh toán của đơn.'
 export function GuestLookupPage() {
-  const [number, setNumber] = useState(''), [email, setEmail] = useState(''), [purpose, setPurpose] = useState<'ViewOrder' | 'ClaimOrder'>('ViewOrder')
+  const [number, setNumber] = useState(''), [email, setEmail] = useState(''), [purpose, setPurpose] = useState<'ViewOrder' | 'ClaimOrder' | 'CancelOrder'>('ViewOrder')
   const [error, setError] = useState<ApiError>(), [validation, setValidation] = useState<Record<string, string[]>>({}), [sent, setSent] = useState(false), [busy, setBusy] = useState(false)
   const lock = useRef(false)
   async function submit() {
@@ -27,7 +28,7 @@ export function GuestLookupPage() {
   }
   return <section className="page-section guest-page"><span className="eyebrow">ĐƠN HÀNG CỦA BẠN</span><h1>Tra cứu đơn khách vãng lai</h1><p>Nhập mã đơn và email đặt hàng để nhận liên kết xác thực. Bạn không cần tạo tài khoản để xem đơn.</p>
     <form className="catalog-panel" noValidate onSubmit={e => { e.preventDefault(); void submit() }}><fieldset disabled={busy}><legend>Yêu cầu liên kết qua email</legend><TextField label="Mã đơn hàng" value={number} required maxLength={30} error={fieldError(validation, 'orderNumber')} onChange={e => { setNumber(e.target.value); setSent(false) }} /><TextField label="Email đặt hàng" type="email" required maxLength={256} autoComplete="email" value={email} error={fieldError(validation, 'email')} onChange={e => { setEmail(e.target.value); setSent(false) }} />
-      <label className="field">Mục đích<select value={purpose} onChange={e => { setPurpose(e.target.value as typeof purpose); setSent(false) }}><option value="ViewOrder">Xem đơn hàng</option><option value="ClaimOrder">Nhận đơn vào tài khoản</option></select></label></fieldset><SubmitButton busy={busy}>Gửi liên kết qua email</SubmitButton></form>
+      <label className="field">Mục đích<select value={purpose} onChange={e => { setPurpose(e.target.value as typeof purpose); setSent(false) }}><option value="ViewOrder">Xem đơn hàng</option><option value="CancelOrder">Hủy đơn / yêu cầu thu hồi</option><option value="ClaimOrder">Nhận đơn vào tài khoản</option></select></label></fieldset><SubmitButton busy={busy}>Gửi liên kết qua email</SubmitButton></form>
     {sent && <p className="notice" role="status">{neutral}</p>}{error && <ErrorNotice error={error} />}<Link className="button button-outline" to="/guest/order">Mở đơn trong phiên hiện tại</Link>
   </section>
 }
@@ -71,6 +72,7 @@ export function GuestOrderPage() {
   return <section className="page-section"><span className="eyebrow">THÔNG TIN LÚC ĐẶT HÀNG</span><h1>Đơn hàng khách vãng lai</h1>{busy && <p role="status">Đang tải đơn hàng…</p>}{error && <><ErrorNotice error={error} /><SubmitButton type="button" onClick={() => setAttempt(n => n + 1)}>Tải lại đơn</SubmitButton><Link className="button button-outline" to="/guest/lookup">Yêu cầu liên kết mới</Link></>}
     {order && <><OrderReceipt order={order} /><div className="checkout-grid"><section className="catalog-panel"><h2>Sản phẩm đã đặt</h2><ul className="order-lines">{order.items.map(i => <li key={i.id}><strong>{i.productName}</strong><span>{i.variant}</span><small>SKU: {i.sku}</small><span>{i.quantity} × {formatVnd(i.unitPrice - i.unitDiscount)}</span><strong>{formatVnd(i.lineTotal)}</strong></li>)}</ul><dl className="order-totals"><div><dt>Tiền hàng</dt><dd>{formatVnd(order.subtotal)}</dd></div><div><dt>Giảm giá</dt><dd>{formatVnd(order.discountTotal)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatVnd(order.shippingFee)}</dd></div></dl></section><section className="catalog-panel"><h2>Giao hàng</h2><p>{order.recipientName} · {order.phone}</p><p>{[order.addressLine, order.locality, order.province, 'Việt Nam'].filter(Boolean).join(', ')}</p>{order.note && <p>Ghi chú: {order.note}</p>}<p>Đặt lúc {formatVietnamTime(order.createdAt)}</p><h2>Lịch sử đơn</h2><ol className="order-timeline">{order.timeline.map((h, i) => <li key={i}>{orderStatuses[h.toStatus as keyof typeof orderStatuses]} · {formatVietnamTime(h.createdAt)}</li>)}</ol></section></div>
       <OrderPayments id={order.id} area="guest" />
+      <OrderAfterSale id={order.id} area="guest" changed={() => setAttempt(n => n + 1)} />
       {order.createAccountConsent && <section className="catalog-panel"><h2>Quản lý đơn bằng tài khoản</h2><p>Bạn đã đồng ý nhận hướng dẫn tạo tài khoản khi đặt hàng. Việc đăng ký và nhận quyền đơn vẫn cần xác minh email.</p><SubmitButton type="button" busy={sending} onClick={() => void setup()}>Gửi hướng dẫn tạo tài khoản</SubmitButton>{sent && <p className="notice" role="status">{neutral}</p>}</section>}
       <Link className="button button-outline" to="/guest/lookup">Yêu cầu liên kết nhận đơn vào tài khoản</Link>
     </>}

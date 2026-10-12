@@ -121,11 +121,12 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
         var order = new Order { OrderNumber = "PS" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(14)), UserId = owner.UserId,
             CustomerEmail = email, NormalizedCustomerEmail = normalizedEmail, RecipientName = Text(request.RecipientName), Phone = Text(request.Phone),
             AddressLine = address.AddressLine!, Locality = address.Locality, Province = address.Province, CountryCode = address.CountryCode,
-            PaymentMethod = Enum.Parse<PaymentMethod>(request.PaymentMethod), Status = OrderStatus.Placed, Currency = "VND",
+            PaymentMethod = Enum.Parse<PaymentMethod>(request.PaymentMethod), Status = OrderStatus.Reviewing, Currency = "VND",
             Subtotal = quote.Subtotal, DiscountTotal = quote.DiscountTotal, ShippingFee = quote.ShippingFee, GrandTotal = quote.GrandTotal,
             TierIdAtPurchase = membership?.TierId, TierCodeSnapshot = membership?.Code, CustomerNote = note, PaymentDueAt = dueAt, CreatedAt = now };
         order.AccountConsent = new() { Accepted = request.CreateAccountConsent ?? false, ConsentTextVersion = owner.UserId is null ? ConsentVersion : "authenticated-v1", RecordedAt = now };
         order.StatusHistories.Add(new() { ToStatus = OrderStatus.Placed, ActorUserId = owner.UserId, ActorType = account is null ? OrderActorType.System : OrderActorType.Customer, Reason = "Checkout", CreatedAt = now });
+        order.StatusHistories.Add(new() { FromStatus = OrderStatus.Placed, ToStatus = OrderStatus.Reviewing, ActorType = OrderActorType.System, Reason = "Đã giữ đủ hàng cho đơn", CreatedAt = now });
         for (var i = 0; i < quote.Items.Count; i++)
         {
             var line = quote.Items[i]; var id = long.Parse(line.VariantId, CultureInfo.InvariantCulture);
@@ -140,6 +141,8 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
         db.Orders.Add(order); await db.SaveChangesAsync(ct);
         db.OutboxMessages.Add(new() { EventKey = "OrderPlaced:" + ApiContract.Id(order.Id), Type = "OrderPlaced",
             PayloadJson = JsonSerializer.Serialize(new { version = 1, orderId = ApiContract.Id(order.Id) }), CreatedAt = now, NextAttemptAt = now });
+        db.OutboxMessages.Add(new() { EventKey = "OrderReviewing:" + ApiContract.Id(order.Id), Type = "OrderStateChanged",
+            PayloadJson = JsonSerializer.Serialize(new { version = 1, orderId = ApiContract.Id(order.Id), fromStatus = "Placed", toStatus = "Reviewing" }), CreatedAt = now, NextAttemptAt = now });
         key.Status = IdempotencyRequestStatus.Completed; key.RequestHash = hash; key.OrderId = order.Id;
         await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return new(Response(order), false);
     }

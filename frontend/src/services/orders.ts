@@ -48,7 +48,7 @@ export const orders = {
   session: () => request('/api/v1/checkout/sessions', decodeSession, { method: 'POST' }),
   result: (key: string, signal?: AbortSignal) => request(`/api/v1/checkout/sessions/${checkoutKey(key)}/result`, decodeResult, { signal }),
   place: (key: string, body: OrderBody) => request('/api/v1/orders', decodePlacedOrder, { method: 'POST', body, headers: { 'Idempotency-Key': checkoutKey(key) } }),
-  requestAccess: (orderNumber: string, email: string, purpose: 'ViewOrder' | 'ClaimOrder') => request('/api/v1/guest/order-access-requests', decodeEmpty, { method: 'POST', body: { orderNumber, email, purpose } }),
+  requestAccess: (orderNumber: string, email: string, purpose: 'ViewOrder' | 'CancelOrder' | 'ClaimOrder') => request('/api/v1/guest/order-access-requests', decodeEmpty, { method: 'POST', body: { orderNumber, email, purpose } }),
   exchange: (token: string, purpose: 'ViewOrder' | 'CancelOrder') => request('/api/v1/guest/order-access/exchange', v => {
     if (!isRecord(v) || v.purpose !== purpose) throw new TypeError('Invalid grant'); return { purpose, expiresAt: utc(v.expiresAt) }
   }, { method: 'POST', body: { token, purpose } }),

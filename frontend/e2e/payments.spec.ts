@@ -32,10 +32,12 @@ test('guest receipt launches signed Sandbox form; authenticated provider fixture
 test('paid bank transfer order remains readable by its owner and Admin after the deadline is cleared', async ({ browser }) => {
   const context = await browser.newContext({ storageState: state }), page = await context.newPage()
   const { order } = await place(page, 'BankTransfer', true)
+  expect((await (await page.request.get('/api/v1/admin/orders/' + order.id)).json() as { snapshot: { status: string } }).snapshot.status).toBe('Reviewing')
   const init = await post(page, 'me/orders/' + order.id + '/sepay-checkout'); expect(init.status()).toBe(200)
   const checkout = await init.json() as { invoice: string; amount: number }
   // Synthetic provider notification; never send a transaction to the external gateway.
   const ipn = await page.request.post('/api/v1/payments/sepay/ipn', { headers: { 'X-Secret-Key': 'synthetic-e2e-ipn' }, data: { notification_type: 'ORDER_PAID', order: { order_invoice_number: checkout.invoice, order_status: 'CAPTURED', order_currency: 'VND', order_amount: String(checkout.amount) }, transaction: { id: randomUUID(), transaction_id: randomUUID().replaceAll('-', ''), payment_method: 'BANK_TRANSFER', transaction_type: 'PAYMENT', transaction_status: 'APPROVED', transaction_currency: 'VND', transaction_amount: String(checkout.amount) } } }); expect(ipn.status()).toBe(200)
+  expect((await (await page.request.get('/api/v1/admin/orders/' + order.id)).json() as { snapshot: { status: string } }).snapshot.status).toBe('Approved')
   for (const area of ['account', 'admin']) {
     await page.goto('/' + area + '/orders/' + order.id)
     await expect(page.getByRole('heading', { name: 'Đơn hàng đã đặt', exact: true })).toBeVisible()
@@ -54,5 +56,72 @@ test('Admin COD lost-response retry produces one receipt and payment notificatio
   await page.getByRole('button', { name: 'Ghi nhận tiền đã nhận', exact: true }).click(); await page.getByRole('button', { name: 'Thử lại cùng yêu cầu thanh toán', exact: true }).click(); await expect(page.getByText('Đã nhận đủ', { exact: true })).toBeVisible(); await expect(page.locator('.payment-row')).toHaveCount(1)
   await expect.poll(async () => { const notices = await (await page.request.get('/api/v1/admin/notifications?pageSize=100')).json() as { items: { type: string; orderId: string }[] }; return notices.items.filter(n => n.orderId === order.id && n.type === 'PaymentConfirmed').length }).toBe(1)
   for (const width of [360, 768, 1440]) { await page.setViewportSize({ width, height: 900 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); if (width === 360) await page.screenshot({ path: path.resolve('../docs/agent-kit/tasks/P4-02-COD-360.png'), fullPage: true }) }
+  await context.close()
+})
+
+test('Admin dispatch lost acknowledgment retries once; COD completes only after collection and notifies owner', async ({ browser }) => {
+  const context = await browser.newContext({ storageState: state }), page = await context.newPage()
+  const { order } = await place(page, 'COD', true); await page.goto('/admin/orders/' + order.id)
+  async function step() {
+    await page.getByLabel('Lý do cập nhật trạng thái').selectOption({ index: 1 })
+    await page.getByLabel('Tôi đã kiểm tra và xác nhận bước xử lý này.').check()
+    await page.getByRole('button', { name: /^Chuyển sang/ }).click()
+  }
+  await expect(page.getByRole('button', { name: 'Chuyển sang Đã xác nhận', exact: true })).toBeVisible(); await step()
+  await expect(page.getByRole('button', { name: /^Chuyển sang/ })).toContainText('Đang giao')
+  let lost = false, sent: unknown, version: string | undefined
+  await page.route('**/api/v1/admin/orders/' + order.id + '/transitions', async route => {
+    if (!lost) { sent = route.request().postDataJSON() as unknown; version = route.request().headers()['if-match']; expect((await route.fetch()).status()).toBe(200); lost = true; await route.abort('failed') }
+    else { expect(route.request().postDataJSON()).toEqual(sent); expect(route.request().headers()['if-match']).toBe(version); await route.continue() }
+  })
+  await step(); await page.getByRole('button', { name: 'Thử lại cùng bước xử lý' }).click(); await page.unroute('**/api/v1/admin/orders/' + order.id + '/transitions')
+  await expect(page.getByRole('button', { name: /^Chuyển sang/ })).toContainText('Đã giao'); await step()
+  await expect(page.locator('.order-lines').locator('..').getByText('Đã giao · Thanh toán khi nhận hàng', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Chuyển sang/ })).toHaveCount(0)
+  const reservations = (await (await page.request.get('/api/v1/admin/orders/' + order.id)).json() as { reservations: { status: string }[] }).reservations
+  expect(reservations.every(r => r.status === 'Consumed')).toBe(true)
+  await page.getByLabel('Ghi chú đối soát', { exact: true }).fill('Synthetic collected cash'); await page.getByLabel('Tôi đã kiểm tra và xác nhận số tiền thực nhận.').check(); await page.getByRole('button', { name: 'Ghi nhận tiền đã nhận', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^Chuyển sang/ })).toContainText('Hoàn tất'); await step()
+  await expect.poll(async () => (await (await page.request.get('/api/v1/admin/orders/' + order.id)).json() as { snapshot: { status: string } }).snapshot.status).toBe('Completed')
+  await expect.poll(async () => ((await (await page.request.get('/api/v1/admin/notifications?pageSize=100')).json()) as { items: { type: string; orderId: string }[] }).items.filter(n => n.type === 'OrderCompleted' && n.orderId === order.id).length).toBe(1)
+  for (const width of [360, 768, 1440]) { await page.setViewportSize({ width, height: 900 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true) }
+  await page.goto('/account/orders/' + order.id); await expect(page.getByLabel('Lý do cập nhật trạng thái')).toHaveCount(0)
+  await context.close()
+})
+
+async function saleForm(page: Page, title: string, proof?: string) {
+  const form = page.getByRole('heading', { name: title, exact: true }).locator('..')
+  await form.getByRole('combobox').selectOption({ index: 1 })
+  if (proof) await form.getByRole('textbox', { name: /Chứng từ thu hồi hàng|Mã giao dịch hoàn tiền/ }).fill(proof)
+  await form.getByRole('checkbox').check()
+  return form
+}
+test('paid owner cancellation lost acknowledgment releases once; Admin fails and retries refund then records actual completion', async ({ browser }) => {
+  test.setTimeout(60000)
+  const context = await browser.newContext({ storageState: state }), page = await context.newPage(); const { order } = await place(page, 'BankTransfer', true)
+  const checkout = await (await post(page, 'me/orders/' + order.id + '/sepay-checkout')).json() as { invoice: string; amount: number }
+  expect((await page.request.post('/api/v1/payments/sepay/ipn', { headers: { 'X-Secret-Key': 'synthetic-e2e-ipn' }, data: { notification_type: 'ORDER_PAID', order: { order_invoice_number: checkout.invoice, order_status: 'CAPTURED', order_currency: 'VND', order_amount: String(checkout.amount) }, transaction: { id: randomUUID(), transaction_id: randomUUID().replaceAll('-', ''), payment_method: 'BANK_TRANSFER', transaction_type: 'PAYMENT', transaction_status: 'APPROVED', transaction_currency: 'VND', transaction_amount: String(checkout.amount) } } })).status()).toBe(200)
+  await page.goto('/account/orders/' + order.id); const cancel = await saleForm(page, 'Hủy đơn hàng'); let lost = false, sent: unknown, version: string | undefined
+  await page.route('**/api/v1/me/orders/' + order.id + '/cancel', async route => { if (!lost) { sent = route.request().postDataJSON() as unknown; version = route.request().headers()['if-match']; expect((await route.fetch()).status()).toBe(200); lost = true; await route.abort('failed') } else { expect(route.request().postDataJSON()).toEqual(sent); expect(route.request().headers()['if-match']).toBe(version); await route.continue() } })
+  await cancel.getByRole('button', { name: 'Hủy đơn hàng', exact: true }).click(); await page.getByRole('button', { name: 'Thử lại: Hủy đơn hàng', exact: true }).click(); await expect(page.getByText('Chờ hoàn tiền', { exact: true })).toBeVisible()
+  await page.goto('/admin/orders/' + order.id); let data = await (await page.request.get('/api/v1/admin/orders/' + order.id + '/after-sale')).json() as { refunds: { id: string; status: string }[] }; expect(data.refunds).toHaveLength(1)
+  const failTitle = 'Ghi nhận hoàn tiền thất bại #' + data.refunds[0].id; const fail = await saleForm(page, failTitle); await fail.getByRole('button', { name: failTitle, exact: true }).click(); await expect(page.getByRole('heading', { name: /Khoản hoàn .*Hoàn tiền thất bại/ })).toBeVisible()
+  const payment = ((await (await page.request.get('/api/v1/admin/orders/' + order.id)).json()) as { payments: { id: string }[] }).payments[0]; const createTitle = 'Tạo yêu cầu hoàn tiền cho khoản #' + payment.id
+  const create = await saleForm(page, createTitle); await create.getByLabel('Tiền hàng hoàn (VND)', { exact: true }).fill('1000000'); await create.getByRole('button', { name: createTitle, exact: true }).click()
+  await expect(page.getByText('Chờ hoàn tiền', { exact: true })).toBeVisible(); data = await (await page.request.get('/api/v1/admin/orders/' + order.id + '/after-sale')).json() as typeof data; const pending = data.refunds.find(r => r.status === 'Pending')!
+  const completeTitle = 'Ghi nhận đã hoàn tiền #' + pending.id; const complete = await saleForm(page, completeTitle, randomUUID()); await complete.getByRole('button', { name: completeTitle, exact: true }).click(); await expect(page.getByText('Đã hoàn tiền', { exact: true })).toBeVisible()
+  await expect.poll(async () => ((await (await page.request.get('/api/v1/admin/notifications?pageSize=100')).json()) as { items: { type: string; orderId: string }[] }).items.filter(n => n.type === 'RefundCompleted' && n.orderId === order.id).length).toBe(1)
+  await page.goto('/account/orders/' + order.id); await expect(page.getByText('Đã hoàn tiền', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: /Ghi nhận đã hoàn tiền/ })).toHaveCount(0)
+  await context.close()
+})
+test('shipping recall requires real goods evidence before Admin restocks and cancels', async ({ browser }) => {
+  const context = await browser.newContext({ storageState: state }), page = await context.newPage(); const { order } = await place(page, 'COD', true); await page.goto('/admin/orders/' + order.id)
+  async function forward() { await page.getByLabel('Lý do cập nhật trạng thái').selectOption({ index: 1 }); await page.getByLabel('Tôi đã kiểm tra và xác nhận bước xử lý này.').check(); await page.getByRole('button', { name: /^Chuyển sang/ }).click() }
+  await forward(); await expect(page.getByRole('button', { name: 'Chuyển sang Đang giao', exact: true })).toBeVisible(); await forward(); await expect(page.getByRole('button', { name: 'Chuyển sang Đã giao', exact: true })).toBeVisible()
+  await page.goto('/account/orders/' + order.id); const requestTitle = 'Yêu cầu dừng giao và thu hồi'; const form = await saleForm(page, requestTitle); await form.getByRole('button', { name: requestTitle, exact: true }).click(); await expect(page.getByRole('heading', { name: 'Yêu cầu thu hồi · Đang chờ', exact: true })).toBeVisible()
+  await page.goto('/admin/orders/' + order.id); const title = 'Chấp thuận thu hồi và hủy đơn'; const approve = page.getByRole('heading', { name: title, exact: true }).locator('..'); expect(await approve.getByRole('checkbox').isChecked()).toBe(false); expect(await approve.getByLabel('Chứng từ thu hồi hàng').getAttribute('required')).not.toBeNull()
+  for (const width of [360, 768, 1440]) { await page.setViewportSize({ width, height: 900 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true) }
+  await saleForm(page, title, 'Synthetic recovered receipt'); await approve.getByRole('button', { name: title, exact: true }).click(); await expect(page.getByRole('heading', { name: 'Yêu cầu thu hồi · Đã chấp thuận', exact: true })).toBeVisible()
+  const detail = await (await page.request.get('/api/v1/admin/orders/' + order.id)).json() as { snapshot: { status: string }; reservations: { status: string }[] }; expect(detail.snapshot.status).toBe('Cancelled'); expect(detail.reservations.every(r => r.status === 'Consumed')).toBe(true)
   await context.close()
 })

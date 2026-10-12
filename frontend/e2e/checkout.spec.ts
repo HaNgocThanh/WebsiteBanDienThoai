@@ -42,7 +42,7 @@ test('guest JS fetch creates one COD order with protected cookie and can safely 
     const response = await fetch('/api/v1/orders', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf.token, 'Idempotency-Key': key }, body: JSON.stringify(payload) })
     return { status: response.status, order: await response.json() as { id: string; status: string; grandTotal: number; paymentDueAt: string | null } }
   }, { key: session.checkoutKey, payload })
-  expect(response.status).toBe(201); expect(response.order).toMatchObject({ status: 'Placed', grandTotal: 25000000, paymentDueAt: null }); expect(typeof response.order.id).toBe('string')
+  expect(response.status).toBe(201); expect(response.order).toMatchObject({ status: 'Reviewing', grandTotal: 25000000, paymentDueAt: null }); expect(typeof response.order.id).toBe('string')
   await page.reload(); const retry = await post(page, 'orders', payload, session.checkoutKey); expect(retry.status()).toBe(200); expect(await retry.json()).toEqual(response.order)
   const altered = await post(page, 'orders', { ...payload, note: 'Different retry' }, session.checkoutKey); expect(altered.status()).toBe(409); expect((await altered.json() as { code: string }).code).toBe('IDEMPOTENCY_PAYLOAD_MISMATCH')
   expect(await page.evaluate(() => Object.keys(localStorage))).not.toContain('checkoutKey')

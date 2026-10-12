@@ -105,7 +105,18 @@ public sealed class PaymentService(AppDbContext db, TimeProvider clock, SePaySan
         {
             order.PaymentDueAt = null;
             foreach (var reservation in await db.StockReservations.Where(r => r.OrderItem.OrderId == order.Id && r.Status == StockReservationStatus.Active).ToListAsync(ct)) reservation.ExpiresAt = null;
+            var balance = await BalanceAsync(order, ct);
+            if (balance.Confirmed - balance.Refunded >= order.GrandTotal && balance.RefundPending == 0 && order.Status is OrderStatus.Placed or OrderStatus.Reviewing)
+            {
+                if (order.Status == OrderStatus.Placed)
+                    db.OrderStatusHistories.Add(new() { OrderId = order.Id, FromStatus = OrderStatus.Placed, ToStatus = OrderStatus.Reviewing, ActorType = OrderActorType.System, Reason = "Đã giữ hàng cho đơn", CreatedAt = Now });
+                db.OrderStatusHistories.Add(new() { OrderId = order.Id, FromStatus = OrderStatus.Reviewing, ToStatus = OrderStatus.Approved, ActorType = OrderActorType.System, Reason = "SePay xác nhận đã nhận đủ tiền chuyển khoản", CreatedAt = Now });
+                order.Status = OrderStatus.Approved;
+                db.OutboxMessages.Add(new() { EventKey = "OrderAutoApproved:" + order.Id, Type = "OrderStateChanged",
+                    PayloadJson = JsonSerializer.Serialize(new { version = 1, orderId = order.Id.ToString(), fromStatus = "Reviewing", toStatus = "Approved" }), CreatedAt = Now, NextAttemptAt = Now });
+            }
         }
+        order.UpdatedAt = Now;
         db.Entry(order).Property(o => o.UpdatedAt).IsModified = true;
     }
     public async Task<PaymentDto> CodAsync(long id, Guid actor, CodReceiptRequest request, CancellationToken ct)

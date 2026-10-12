@@ -43,8 +43,10 @@ test('customer order paging/detail, Admin email/day filters and private note los
 })
 test('hosted notification unread badge/read/filter survives reload and points to owned order', async ({ page }) => {
   await customer(page); const order = await place(page); await page.goto('/account/notifications')
-  await expect.poll(async () => ((await (await page.request.get('/api/v1/me/notifications')).json()) as { unreadCount: number }).unreadCount, { timeout: 15000 }).toBe(1); await page.reload(); await expect(page.getByText('1 thông báo chưa đọc', { exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: 'Thông báo (1)' })).toBeVisible()
-  await page.getByLabel('Chỉ xem chưa đọc').check(); await page.getByRole('button', { name: 'Đánh dấu đã đọc' }).click(); await expect(page.getByText('0 thông báo chưa đọc', { exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: 'Thông báo (0)' })).toBeVisible(); await page.reload(); await expect(page.getByText('Không có thông báo phù hợp.')).toBeVisible(); await page.getByLabel('Chỉ xem chưa đọc').uncheck(); await page.getByRole('link', { name: 'Xem đơn hàng', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Đơn ' + order.orderNumber })).toBeVisible()
+  await expect.poll(async () => ((await (await page.request.get('/api/v1/me/notifications')).json()) as { unreadCount: number }).unreadCount, { timeout: 15000 }).toBe(2); await page.reload(); await expect(page.getByText('2 thông báo chưa đọc', { exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: 'Thông báo (2)' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Đơn hàng mới', exact: true })).toBeVisible(); await expect(page.getByRole('heading', { name: 'Đơn hàng có cập nhật', exact: true })).toBeVisible()
+  await page.getByLabel('Chỉ xem chưa đọc').check(); await page.getByRole('button', { name: 'Đánh dấu đã đọc' }).first().click(); await expect(page.getByText('1 thông báo chưa đọc', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Đánh dấu đã đọc' }).click(); await expect(page.getByText('0 thông báo chưa đọc', { exact: true })).toBeVisible(); await expect(page.getByRole('link', { name: 'Thông báo (0)' })).toBeVisible(); await page.reload(); await expect(page.getByText('Không có thông báo phù hợp.')).toBeVisible(); await page.getByLabel('Chỉ xem chưa đọc').uncheck(); await page.getByRole('link', { name: 'Xem đơn hàng', exact: true }).first().click(); await expect(page.getByRole('heading', { name: 'Đơn ' + order.orderNumber })).toBeVisible()
 })
 
 test('Admin management stays separate while the same account can shop, then logout and login to management', async ({ page, browser }) => {
@@ -58,7 +60,7 @@ test('Admin management stays separate while the same account can shop, then logo
   await expect.poll(async () => ((await (await admin.request.get('/api/v1/admin/notifications?pageSize=100')).json()) as { items: { orderId: string }[] }).items.some(n => n.orderId === customerOrder.id), { timeout: 15000 }).toBe(true)
   expect(((await (await admin.request.get('/api/v1/me/notifications?pageSize=100')).json()) as { items: { orderId: string }[] }).items.some(n => n.orderId === customerOrder.id)).toBe(false)
   await admin.goto('/admin/notifications'); await expect(admin.getByRole('heading', { name: 'Thông báo quản trị', exact: true })).toBeVisible()
-  await expect(admin.locator('a[href="/admin/orders/' + customerOrder.id + '"]')).toBeVisible()
+  await expect(admin.locator('a[href="/admin/orders/' + customerOrder.id + '"]').first()).toBeVisible()
   await admin.getByRole('link', { name: '← Mở cửa hàng để mua sắm', exact: true }).click(); await expect(admin).toHaveURL('/')
   const ownOrder = await place(admin)
   await admin.goto('/account/orders'); await expect(admin.getByRole('heading', { name: 'Đơn hàng của tôi' })).toBeVisible(); await expect(admin.locator('.order-row')).toContainText(ownOrder.orderNumber); await expect(admin.locator('.order-row')).not.toContainText(customerOrder.orderNumber)

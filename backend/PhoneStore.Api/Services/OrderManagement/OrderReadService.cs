@@ -49,14 +49,14 @@ public sealed class OrderReadService(AppDbContext db, TimeProvider clock)
         var refunds = db.Refunds.Where(r => r.Payment.OrderId == id);
         var summary = new PaymentSummaryDto(ApiContract.Money(confirmed), ApiContract.Money(await refunds.Where(r => r.Status == RefundStatus.Pending).SumAsync(r => (decimal?)r.Amount, ct) ?? 0), ApiContract.Money(await refunds.Where(r => r.Status == RefundStatus.Completed).SumAsync(r => (decimal?)r.Amount, ct) ?? 0), ApiContract.Money(Math.Max(0, o.GrandTotal - confirmed)));
         var version = Convert.ToBase64String(o.Version);
-        // No payment/state command exists yet (P4-02/03); never advertise an unavailable action.
         if (!admin) return new OrderReadDto(snapshot, version, summary, []);
+        var allowed = OrderTransitionService.Allowed(o.Status, o.PaymentMethod, summary.Confirmed - summary.Refunded, summary.RefundPending, o.GrandTotal);
         var notes = await db.OrderInternalNotes.AsNoTracking().Where(n => n.OrderId == id).OrderByDescending(n => n.CreatedAt).ThenByDescending(n => n.Id).Take(50).Select(n => new InternalNoteDto(n.Id.ToString(), n.ActorUserId, n.Text, n.CreatedAt)).ToListAsync(ct);
         var internalHistory = await db.OrderStatusHistories.AsNoTracking().Where(h => h.OrderId == id).OrderBy(h => h.CreatedAt).ThenBy(h => h.Id).Select(h => new AdminHistoryDto(h.Id.ToString(), h.FromStatus == null ? null : h.FromStatus.ToString(), h.ToStatus.ToString(), h.ActorUserId, h.ActorType.ToString(), h.Reason, h.CreatedAt)).ToListAsync(ct);
         var payments = await db.Payments.AsNoTracking().Where(p => p.OrderId == id).OrderBy(p => p.Id).Select(p => new OrderPaymentDto(p.Id.ToString(), p.Method.ToString(), p.Status.ToString(), p.Amount, p.CreatedAt)).ToListAsync(ct);
         var refundRows = await refunds.AsNoTracking().OrderBy(r => r.Id).Select(r => new OrderRefundDto(r.Id.ToString(), r.PaymentId.ToString(), r.Status.ToString(), r.MerchandiseAmount, r.ShippingAmount, r.CreatedAt)).ToListAsync(ct);
         var stock = await db.StockReservations.AsNoTracking().Where(r => r.OrderItem.OrderId == id).OrderBy(r => r.OrderItemId).Select(r => new OrderStockDto(r.OrderItemId.ToString(), r.OrderItem.VariantId.ToString(), r.Quantity, r.Status.ToString(), r.ExpiresAt)).ToListAsync(ct);
-        return new AdminOrderReadDto(snapshot, version, summary, [], o.UserId, o.CustomerEmail, notes, internalHistory, payments, refundRows, stock);
+        return new AdminOrderReadDto(snapshot, version, summary, allowed, o.UserId, o.CustomerEmail, notes, internalHistory, payments, refundRows, stock);
     }
     private static InternalNoteDto NoteDto(OrderInternalNote n) => new(ApiContract.Id(n.Id), n.ActorUserId, n.Text, n.CreatedAt);
     public async Task<InternalNoteDto> NoteAsync(long orderId, Guid actor, InternalNoteRequest request, CancellationToken ct)

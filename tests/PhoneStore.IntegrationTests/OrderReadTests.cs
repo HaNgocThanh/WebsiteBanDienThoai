@@ -75,7 +75,7 @@ public sealed class OrderReadTests(SqlFixture sql)
         await using (var db = sql.CreateContext()) {
             var variant = await db.ProductVariants.Include(x => x.Product).SingleAsync(x => x.Id == v); variant.Price = 1200000; variant.Product.Name = "Changed live catalog";
             var profile = await db.Users.SingleAsync(x => x.Id == account.Id); profile.FullName = "Changed profile";
-            var history = await db.OrderStatusHistories.SingleAsync(x => x.OrderId == long.Parse(id)); history.Reason = "PRIVATE SYNTHETIC REASON"; await db.SaveChangesAsync();
+            var history = await db.OrderStatusHistories.SingleAsync(x => x.OrderId == long.Parse(id) && x.ToStatus == OrderStatus.Placed); history.Reason = "PRIVATE SYNTHETIC REASON"; await db.SaveChangesAsync();
         }
         var after = await a.GetFromJsonAsync<JsonElement>("/api/v1/me/orders/" + id);
         Assert.Equal(before.GetProperty("snapshot").ToString(), after.GetProperty("snapshot").ToString()); Assert.DoesNotContain("PRIVATE", after.ToString()); Assert.False(after.TryGetProperty("notes", out _)); Assert.False(after.TryGetProperty("customerEmail", out _)); Assert.Empty(after.GetProperty("allowedActions").EnumerateArray());
@@ -89,7 +89,7 @@ public sealed class OrderReadTests(SqlFixture sql)
         var v = await Variant(); using var host = new AuthFactory(sql.ConnectionString); using var browser = host.Browser(); using var admin = host.Browser(); var user = await Login(host, browser); await Login(host, admin, true);
         var ids = new List<long>(); for (var i = 0; i < 3; i++) ids.Add(long.Parse((await Place(browser, v, user.Email)).GetProperty("id").GetString()!));
         await using (var db = sql.CreateContext()) { for (var i = 0; i < 3; i++) { var o = await db.Orders.SingleAsync(o => o.Id == ids[i]); o.CreatedAt = DateTime.Parse("2026-10-08T17:00:00Z").ToUniversalTime().AddDays(i == 2 ? 1 : 0); } await db.SaveChangesAsync(); }
-        var query = "?from=2026-10-08T17:00:00Z&to=2026-10-09T17:00:00Z&pageSize=1&status=Placed";
+        var query = "?from=2026-10-08T17:00:00Z&to=2026-10-09T17:00:00Z&pageSize=1&status=Reviewing";
         var first = await browser.GetFromJsonAsync<JsonElement>("/api/v1/me/orders" + query); var next = await browser.GetFromJsonAsync<JsonElement>("/api/v1/me/orders" + query + "&page=2");
         Assert.Equal(2, first.GetProperty("totalCount").GetInt32()); Assert.Equal(ids[1].ToString(), first.GetProperty("items")[0].GetProperty("id").GetString()); Assert.Equal(ids[0].ToString(), next.GetProperty("items")[0].GetProperty("id").GetString());
         var filtered = await admin.GetFromJsonAsync<JsonElement>("/api/v1/admin/orders" + query + "&customerId=" + user.Id + "&email=" + Uri.EscapeDataString(user.Email)); Assert.Equal(2, filtered.GetProperty("totalCount").GetInt32());

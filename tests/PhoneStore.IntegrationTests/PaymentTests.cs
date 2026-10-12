@@ -19,7 +19,7 @@ using PhoneStore.Api.Services.Auth;
 
 namespace PhoneStore.IntegrationTests;
 [Collection("SQL")]
-public sealed class PaymentTests(SqlFixture sql)
+public sealed partial class PaymentTests(SqlFixture sql)
 {
     private async Task<long> Variant(int onHand = 10)
     {
@@ -116,7 +116,9 @@ public sealed class PaymentTests(SqlFixture sql)
         var results = await Task.WhenAll(Ipn(provider, payload), Ipn(provider, payload)); foreach (var result in results) await Ok(result); await Ok(await Ipn(provider, payload));
         await Problem(await Ipn(provider, Notification(form)), HttpStatusCode.Conflict, "OPERATION_KEY_MISMATCH");
         await using var db = sql.CreateContext(); var id = long.Parse(order.Id); var payment = await db.Payments.SingleAsync(p => p.OrderId == id); Assert.Equal(PaymentStatus.Confirmed, payment.Status); Assert.Null(payment.ConfirmedByUserId);
-        var o = await db.Orders.SingleAsync(o => o.Id == id); Assert.Null(o.PaymentDueAt); Assert.Equal(OrderStatus.Placed, o.Status); Assert.Equal(1000000, o.GrandTotal);
+        var o = await db.Orders.SingleAsync(o => o.Id == id); Assert.Null(o.PaymentDueAt); Assert.Equal(OrderStatus.Approved, o.Status); Assert.Equal(1000000, o.GrandTotal);
+        Assert.Single(await db.OrderStatusHistories.Where(h => h.OrderId == id && h.ToStatus == OrderStatus.Approved && h.ActorType == OrderActorType.System && h.ActorUserId == null).ToListAsync());
+        Assert.Equal(1, await db.OutboxMessages.CountAsync(m => m.EventKey == "OrderAutoApproved:" + id));
         var reservation = await db.StockReservations.Include(r => r.OrderItem).SingleAsync(r => r.OrderItem.OrderId == id); Assert.Null(reservation.ExpiresAt); var inventory = await db.Inventory.SingleAsync(i => i.VariantId == reservation.OrderItem.VariantId); Assert.Equal(10, inventory.OnHand); Assert.Equal(1, inventory.Reserved);
         Assert.Equal(1, await db.AuditLogs.CountAsync(a => a.Action == "SePayReceived" && a.EntityId == payment.Id.ToString())); Assert.Equal(1, await db.OutboxMessages.CountAsync(m => m.EventKey == "PaymentConfirmed:" + payment.Id)); Assert.Equal("Paid", (await List(owner, order.Id)).GetProperty("summary").GetProperty("status").GetString());
         await Ok(await Ipn(provider, new { notification_type = "TRANSACTION_VOID" })); Assert.Equal(1000000, (await List(owner, order.Id)).GetProperty("summary").GetProperty("confirmed").GetDecimal());
@@ -185,7 +187,7 @@ public sealed class PaymentTests(SqlFixture sql)
         var results = await Task.WhenAll(Send(admin, route, payload), Send(admin, route, payload)); Assert.Equal((await Ok(results[0])).ToString(), (await Ok(results[1])).ToString());
         await Problem(await Send(admin, route, new { amount = 400001, payload.note, operationKey = key }), HttpStatusCode.Conflict, "OPERATION_KEY_MISMATCH");
         results = await Task.WhenAll(Send(admin, route, new { amount = 600000, payload.note, operationKey = Guid.NewGuid() }), Send(admin, route, new { amount = 600000, payload.note, operationKey = Guid.NewGuid() })); Assert.Single(results, r => r.StatusCode == HttpStatusCode.OK); await Problem(results.Single(r => r.StatusCode != HttpStatusCode.OK), HttpStatusCode.Conflict, "PAYMENT_AMOUNT_EXCEEDED");
-        await using var db = sql.CreateContext(); var id = long.Parse(order.Id); Assert.Equal(1000000, await db.Payments.Where(p => p.OrderId == id).SumAsync(p => p.Amount)); Assert.Equal(OrderStatus.Placed, (await db.Orders.SingleAsync(o => o.Id == id)).Status); Assert.All(await db.Payments.Where(p => p.OrderId == id).ToListAsync(), p => Assert.Equal(actor.Id, p.ConfirmedByUserId));
+        await using var db = sql.CreateContext(); var id = long.Parse(order.Id); Assert.Equal(1000000, await db.Payments.Where(p => p.OrderId == id).SumAsync(p => p.Amount)); Assert.Equal(OrderStatus.Reviewing, (await db.Orders.SingleAsync(o => o.Id == id)).Status); Assert.All(await db.Payments.Where(p => p.OrderId == id).ToListAsync(), p => Assert.Equal(actor.Id, p.ConfirmedByUserId));
     }
     [Fact]
     public async Task Late_payment_on_cancelled_order_creates_one_system_refund_without_reopening()

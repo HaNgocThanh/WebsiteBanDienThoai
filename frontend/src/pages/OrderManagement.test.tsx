@@ -1,14 +1,16 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { AuthContext } from '../auth/AuthContext'
 import { orderManagement } from '../services/orderManagement'
 import type { OrderDetail } from '../services/orderManagement'
 import { ApiError } from '../services/errors'
+import { afterSale } from '../services/afterSale'
 import { OrderDetailPage, OrderListPage, NotificationsPage } from './OrderManagement'
 const user = { userId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', email: 'synthetic@example.invalid', fullName: 'Synthetic', phone: null, emailConfirmed: true, roles: ['Customer', 'Admin'] }
 const detail: OrderDetail = { version: 'AAAAAAAAAAE=', allowedActions: [], paymentSummary: { confirmed: 0, remaining: 100, refunded: 0, refundPending: 0 }, snapshot: { id: '1', orderNumber: 'PS' + 'a'.repeat(28), status: 'Placed', paymentMethod: 'COD', currency: 'VND', grandTotal: 100, paymentDueAt: null, subtotal: 100, discountTotal: 0, shippingFee: 0, recipientName: 'Snapshot recipient', phone: '0000000000', addressLine: 'Snapshot street', locality: null, province: 'HCM', countryCode: 'VN', note: null, createdAt: '2026-10-09T00:00:00Z', createAccountConsent: false, items: [{ id: '1', variantId: '2', productName: 'Snapshot phone', sku: 'SYN', variant: 'Black', quantity: 1, unitPrice: 100, unitDiscount: 0, lineTotal: 100 }], timeline: [{ fromStatus: null, toStatus: 'Placed', createdAt: '2026-10-09T00:00:00Z' }] }, customerId: user.userId, customerEmail: user.email, notes: [{ id: '1', actorUserId: user.userId, text: 'PRIVATE SYNTHETIC', createdAt: '2026-10-09T00:00:00Z' }], history: [], payments: [], refunds: [], reservations: [] }
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
+beforeEach(() => { vi.spyOn(afterSale, 'read').mockResolvedValue({ orderId: '1', status: 'Placed', version: 'AAAAAAAAAAE=', canCancel: false, canRequest: false, requests: [], refunds: [] }) })
 function open(element: React.ReactNode, entry = '/orders') { render(<AuthContext.Provider value={{ status: 'authenticated', user, refresh: vi.fn(), clear: vi.fn() }}><MemoryRouter initialEntries={[entry]}><Routes><Route path="/orders" element={element} /><Route path="/orders/:id" element={element} /></Routes></MemoryRouter></AuthContext.Provider>) }
 test('list preserves URL filtering/paging and exposes empty/retry states', async () => {
   const list = vi.spyOn(orderManagement, 'list').mockRejectedValueOnce(new ApiError(0, 'NETWORK_ERROR')).mockResolvedValue({ items: [], page: 2, pageSize: 1, totalCount: 2 })
