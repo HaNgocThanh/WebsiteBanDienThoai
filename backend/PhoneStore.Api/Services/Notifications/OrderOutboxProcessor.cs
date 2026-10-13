@@ -104,6 +104,18 @@ public sealed class OrderOutboxProcessor(AppDbContext db, OrderAccessMailQueue m
                 else mail.Queue(new(1, order.Id, null, null, "OrderPlaced"), deliveryKey);
             }
         }
+        // Checkout's initial Reviewing transition is covered by the order receipt, avoiding two emails at placement.
+        else if (!(source.Type == "OrderStateChanged"
+            && payload.RootElement.TryGetProperty("fromStatus", out var initialFrom) && initialFrom.GetString() == "Placed"
+            && payload.RootElement.TryGetProperty("toStatus", out var initialTo) && initialTo.GetString() == "Reviewing"))
+        {
+            var deliveryKey = "OrderEventMail:" + source.EventKey;
+            if (!await db.OutboxMessages.AnyAsync(m => m.EventKey == deliveryKey, ct))
+            {
+                var status = payload.RootElement.TryGetProperty("toStatus", out var target) ? target.GetString() : null;
+                mail.Queue(new(1, order.Id, null, null, source.Type, Status: status), deliveryKey);
+            }
+        }
         Mark(message); await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
     }
     private async Task DeliverAsync(OutboxMessage source, CancellationToken ct)
@@ -111,7 +123,7 @@ public sealed class OrderOutboxProcessor(AppDbContext db, OrderAccessMailQueue m
         var payload = JsonSerializer.Deserialize<OrderMailPayload>(source.PayloadJson) ?? throw new InvalidOperationException("Invalid order mail.");
         if (payload.Version != 1) throw new InvalidOperationException("Unsupported order mail.");
         var order = await db.Orders.AsNoTracking().SingleAsync(o => o.Id == payload.OrderId, ct);
-        string? path = null; DateTime? expires = null;
+        string? path = order.UserId is null ? "/guest/lookup" : "/account/orders/" + order.Id; DateTime? expires = null;
         if (payload.TokenId is { } tokenId)
         {
             var token = await db.OrderAccessTokens.AsNoTracking().SingleAsync(t => t.Id == tokenId && t.OrderId == order.Id, ct);
@@ -124,6 +136,6 @@ public sealed class OrderOutboxProcessor(AppDbContext db, OrderAccessMailQueue m
             path = "/guest/access#token=" + secret + "&purpose=" + payload.Purpose; expires = token.ExpiresAt;
         }
         if (!sender.IsConfigured) throw new InvalidOperationException("Order email unavailable.");
-        await sender.SendAsync(new(source.EventKey, order.CustomerEmail, order.OrderNumber, payload.Purpose, path, expires, payload.AccountSetup), ct);
+        await sender.SendAsync(new(source.EventKey, order.CustomerEmail, order.OrderNumber, payload.Purpose, path, expires, payload.AccountSetup, payload.Status), ct);
     }
 }

@@ -5,7 +5,7 @@ import type { CartItem } from '../cart/CartContext'
 import type { Destination } from './locations'
 
 export interface QuoteLine extends CartItem { productName: string; productSlug: string; sku: string; color: string; storageGb: number; ramGb: number; available: number; unitPrice: number; unitDiscount: number; lineTotal: number; promotionName: string | null }
-export interface Quote { items: QuoteLine[]; subtotal: number; discountTotal: number; shippingFee: number; grandTotal: number; currency: 'VND'; quoteHash: string }
+export interface Quote { items: QuoteLine[]; subtotal: number; discountTotal: number; shippingFee: number; grandTotal: number; currency: 'VND'; quoteHash: string; voucherCode?: string | null; voucherDiscountTotal?: number }
 function str(v: unknown) { if (typeof v !== 'string') throw new TypeError('Invalid text'); return v }
 function int(v: unknown, min: number, max = 2147483647) { if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) throw new TypeError('Invalid quantity'); return v }
 export function decodeQuote(v: unknown): Quote {
@@ -16,14 +16,14 @@ export function decodeQuote(v: unknown): Quote {
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(line.productSlug) || line.unitDiscount > line.unitPrice || line.quantity > line.available || BigInt(line.lineTotal) !== (BigInt(line.unitPrice) - BigInt(line.unitDiscount)) * BigInt(line.quantity)) throw new TypeError('Invalid line arithmetic')
     return line
   })
-  const result: Quote = { items, subtotal: parseMoney(v.subtotal), discountTotal: parseMoney(v.discountTotal), shippingFee: parseMoney(v.shippingFee), grandTotal: parseMoney(v.grandTotal), currency: 'VND', quoteHash: v.quoteHash }
-  if (new Set(items.map(x => x.variantId)).size !== items.length || BigInt(result.subtotal) !== items.reduce((n, x) => n + BigInt(x.unitPrice) * BigInt(x.quantity), 0n) || BigInt(result.discountTotal) !== items.reduce((n, x) => n + BigInt(x.unitDiscount) * BigInt(x.quantity), 0n) || BigInt(result.grandTotal) !== BigInt(result.subtotal) - BigInt(result.discountTotal) + BigInt(result.shippingFee)) throw new TypeError('Invalid quote arithmetic')
+  const result: Quote = { items, subtotal: parseMoney(v.subtotal), discountTotal: parseMoney(v.discountTotal), shippingFee: parseMoney(v.shippingFee), grandTotal: parseMoney(v.grandTotal), currency: 'VND', quoteHash: v.quoteHash, voucherCode: v.voucherCode == null ? null : str(v.voucherCode), voucherDiscountTotal: v.voucherDiscountTotal === undefined ? 0 : parseMoney(v.voucherDiscountTotal) }
+  if (new Set(items.map(x => x.variantId)).size !== items.length || BigInt(result.subtotal) !== items.reduce((n, x) => n + BigInt(x.unitPrice) * BigInt(x.quantity), 0n) || BigInt(result.discountTotal) - BigInt(result.voucherDiscountTotal ?? 0) !== items.reduce((n, x) => n + BigInt(x.unitDiscount) * BigInt(x.quantity), 0n) || BigInt(result.grandTotal) !== BigInt(result.subtotal) - BigInt(result.discountTotal) + BigInt(result.shippingFee)) throw new TypeError('Invalid quote arithmetic')
   return result
 }
 export const quotes = {
-  get: (items: CartItem[], destination: Destination, quoteHash?: string, signal?: AbortSignal) => request('/api/v1/checkout/quote', value => {
+  get: (items: CartItem[], destination: Destination, quoteHash?: string, signal?: AbortSignal, voucherCode?: string) => request('/api/v1/checkout/quote', value => {
     const quote = decodeQuote(value)
     if (quote.items.length !== items.length || quote.items.some(x => !items.some(y => x.variantId === y.variantId && x.quantity === y.quantity))) throw new TypeError('Wrong cart response')
     return quote
-  }, { method: 'POST', body: { items: items.map(x => ({ variantId: x.variantId, quantity: x.quantity })), shippingAddress: { ...destination, addressLine: destination.addressLine.trim(), countryCode: 'VN' }, ...(quoteHash ? { quoteHash } : {}) }, signal }),
+  }, { method: 'POST', body: { items: items.map(x => ({ variantId: x.variantId, quantity: x.quantity })), shippingAddress: { ...destination, addressLine: destination.addressLine.trim(), countryCode: 'VN' }, ...(quoteHash ? { quoteHash } : {}), ...(voucherCode ? { voucherCode } : {}) }, signal }),
 }

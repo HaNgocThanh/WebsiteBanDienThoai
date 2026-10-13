@@ -7,7 +7,7 @@ using PhoneStore.Api.Entities;
 namespace PhoneStore.Api.Services.GuestOrders;
 
 public sealed record OrderMailPayload(int Version, long OrderId, long? TokenId, string? ProtectedToken,
-    string Purpose, bool AccountSetup = false);
+    string Purpose, bool AccountSetup = false, string? Status = null);
 // Caller owns the transaction. Durable payload contains encrypted capability, never plaintext token or email.
 public sealed class OrderAccessMailQueue(AppDbContext db, IDataProtectionProvider protection, TimeProvider clock)
 {

@@ -6,7 +6,7 @@ namespace PhoneStore.Api.Services.Notifications;
 
 // Sensitive envelope for adapters only. Future UI consumes the fragment immediately and clears it.
 public sealed record OrderEmail(string MessageKey, string Email, string OrderNumber, string Purpose,
-    string? ActionPath, DateTime? ExpiresAt, bool AccountSetup);
+    string? ActionPath, DateTime? ExpiresAt, bool AccountSetup, string? Status = null);
 public interface IOrderEmailSender
 {
     bool IsConfigured { get; }

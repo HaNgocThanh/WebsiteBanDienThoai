@@ -1,0 +1,16 @@
+.env
+.env.*
+**/.env
+**/.env.*
+**/bin/
+**/obj/
+**/.local-mailbox/
+**/.local-catalog-images/
+**/*.md
+**/AGENTS.md
+.agents/
+.codex/
+.cursor/
+**/*.ps1
+**/*.http
+PhoneStore.slnx

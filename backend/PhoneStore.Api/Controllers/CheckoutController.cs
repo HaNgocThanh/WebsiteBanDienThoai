@@ -6,11 +6,12 @@ using PhoneStore.Api.Services.Pricing;
 using PhoneStore.Api.Services.Checkout;
 
 namespace PhoneStore.Api.Controllers;
-[ApiController, AllowAnonymous, Route("api/v1/checkout"), ServiceFilter(typeof(QuoteExceptionFilter))]
+[ApiController, AllowAnonymous, Route("api/v1/checkout"), ServiceFilter(typeof(QuoteExceptionFilter)), ServiceFilter(typeof(CheckoutExceptionFilter)), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class CheckoutController(QuoteService quotes, CheckoutService checkout, CheckoutIdentity identity) : ControllerBase
 {
     [HttpPost("quote"), EnableRateLimiting("quote")]
-    public async Task<IActionResult> Quote(QuoteRequest request, CancellationToken ct) => Ok(await quotes.QuoteAsync(request, ct));
+    public async Task<IActionResult> Quote(QuoteRequest request, CancellationToken ct) => Ok(await quotes.QuoteAsync(request, ct,
+        User.Identity?.IsAuthenticated == true && User.IsInRole("Customer") ? Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value) : null));
     [HttpPost("sessions"), EnableRateLimiting("checkout"), ServiceFilter(typeof(CheckoutExceptionFilter))]
     public async Task<IActionResult> Session(CancellationToken ct) => Ok(await checkout.IssueAsync(identity.Resolve(HttpContext, true), ct));
     [HttpGet("sessions/{key}/result"), EnableRateLimiting("checkout"), ServiceFilter(typeof(CheckoutExceptionFilter))]

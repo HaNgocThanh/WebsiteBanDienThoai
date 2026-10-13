@@ -4,6 +4,7 @@ import type { FormEvent, KeyboardEvent } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 import { TextField } from '../components/primitives'
 import { useAuth } from '../auth/AuthContext'
+import { HomeCheckoutReset } from '../checkout/HomeCheckoutReset'
 
 export function Brand({ admin = false }: { admin?: boolean }) {
   return <Link to={admin ? '/admin' : '/'} className="brand" aria-label={admin ? 'PhoneStore quản trị' : 'PhoneStore trang chủ'}>
@@ -30,8 +31,9 @@ export function StorefrontLayout() {
     if (event.key === 'Escape' && open) { setOpen(false); menuButton.current?.focus() }
   }
   return <div className="storefront" onKeyDown={closeWithEscape}>
+    <HomeCheckoutReset />
     <a className="skip-link" href="#main-content">Đến nội dung chính</a>
-    <div className="announcement">Một lựa chọn mới cho chiếc điện thoại của bạn.</div>
+    <div className="announcement">PhoneStore · Chọn điện thoại theo hãng, loại máy và cấu hình.</div>
     <header className="store-header">
       <div className="header-inner">
         <Brand />
@@ -44,7 +46,7 @@ export function StorefrontLayout() {
       </div>
       <nav id="store-nav" className={`store-nav ${open ? 'is-open' : ''}`} aria-label="Điều hướng cửa hàng">
         <NavLink to="/" end onClick={() => setOpen(false)}>Trang chủ</NavLink><NavLink to="/products" onClick={() => setOpen(false)}>Điện thoại</NavLink><NavLink to="/account" onClick={() => setOpen(false)}>Tài khoản</NavLink>
-        {auth.user && <NavLink to="/account/orders" onClick={() => setOpen(false)}>Đơn hàng của tôi</NavLink>}{auth.user && <NavLink to="/account/membership" onClick={() => setOpen(false)}>Hạng thành viên</NavLink>}<NotificationLink />
+        {auth.user && <NavLink to="/account/orders" onClick={() => setOpen(false)}>Đơn hàng của tôi</NavLink>}{auth.user && <NavLink to="/account/membership" onClick={() => setOpen(false)}>Hạng thành viên</NavLink>}{auth.user && <NavLink to="/account/surveys" onClick={() => setOpen(false)}>Khảo sát</NavLink>}<NotificationLink />
         <NavLink to="/guest/lookup" onClick={() => setOpen(false)}>Tra cứu đơn</NavLink>
         <Link to="/health" className="nav-utility" onClick={() => setOpen(false)}>Trạng thái kết nối <span aria-hidden="true">↗</span></Link>
       </nav>

@@ -8,7 +8,7 @@ using PhoneStore.Api.Entities;
 
 namespace PhoneStore.Api.Services.Catalog;
 
-public sealed partial class CatalogService(AppDbContext db)
+public sealed partial class CatalogService(AppDbContext db, PhoneStore.Api.Services.Promotions.PromotionService promotions)
 {
     private static CatalogException Missing() => new(404, "NOT_FOUND", "Không tìm thấy dữ liệu.");
     private static CatalogException Inactive() => new(409, "INACTIVE_PARENT", "Hãng, danh mục hoặc sản phẩm đã bị ẩn.");
@@ -102,15 +102,19 @@ public sealed partial class CatalogService(AppDbContext db)
             .Select(x => new { x.Id, x.Name, x.Slug, x.BrandId, x.CategoryId, x.IsActive, x.Version }).ToListAsync(ct);
         return new(rows.Select(x => new AdminProductSummaryDto(ApiContract.Id(x.Id), x.Name, x.Slug, ApiContract.Id(x.BrandId), ApiContract.Id(x.CategoryId), x.IsActive, Convert.ToBase64String(x.Version))).ToList(), query.Page, query.PageSize, count);
     }
-    public async Task<PublicProductDto> ProductAsync(string slug, CancellationToken ct)
+    public async Task<PublicProductDto> ProductAsync(string slug, CancellationToken ct, Guid? user = null)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct); await promotions.LockPricingAsync(user, ct);
         var value = await VisibleProducts().Where(x => x.Slug == slug).Select(x => new { x.Id, x.Name, x.Slug, x.Description, x.SpecificationsJson,
             Brand = new LookupDto(x.BrandId.ToString(), x.Brand.Name, x.Brand.Slug, x.Brand.IsActive),
             Category = new LookupDto(x.CategoryId.ToString(), x.Category.Name, x.Category.Slug, x.Category.IsActive) }).SingleOrDefaultAsync(ct) ?? throw Missing();
         var variants = await db.ProductVariants.AsNoTracking().Where(x => x.ProductId == value.Id && x.IsActive).OrderBy(x => x.Id)
             .Select(x => new PublicVariantDto(x.Id.ToString(), x.Sku, x.Color, x.StorageGb, x.RamGb, x.Price, x.Inventory == null ? 0 : x.Inventory.OnHand - x.Inventory.Reserved)).ToListAsync(ct);
         foreach (var variant in variants) ApiContract.Money(variant.Price);
-        return new(ApiContract.Id(value.Id), value.Name, value.Slug, value.Description, value.SpecificationsJson, value.Brand, value.Category, variants, await ImagesAsync(value.Id, false, ct));
+        var eligible = await promotions.EligibleAsync(user, ct);
+        variants = variants.Select(v => { var p = PhoneStore.Api.Services.Promotions.PromotionService.Best(eligible.Promotions, value.Id, eligible.TierId, v.Price, eligible.Now); return v with { UnitDiscount = p is null ? 0 : PhoneStore.Api.Services.Promotions.PromotionService.Discount(p, v.Price), PromotionName = p?.Name }; }).ToList();
+        var result = new PublicProductDto(ApiContract.Id(value.Id), value.Name, value.Slug, value.Description, value.SpecificationsJson, value.Brand, value.Category, variants, await ImagesAsync(value.Id, false, ct));
+        await transaction.CommitAsync(ct); return result;
     }
     private Task<List<ImageDto>> ImagesAsync(long id, bool admin, CancellationToken ct) => db.ProductImages.AsNoTracking().Where(x => x.ProductId == id && (admin || x.VariantId == null || x.Variant!.IsActive))
         .OrderBy(x => x.SortOrder).ThenBy(x => x.Id).Select(x => new ImageDto(x.Id.ToString(), x.VariantId == null ? null : x.VariantId.Value.ToString(), x.ImageUrl, x.AltText, x.SortOrder)).ToListAsync(ct);

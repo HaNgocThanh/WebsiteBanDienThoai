@@ -36,6 +36,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Promotion> Promotions => Set<Promotion>();
     public DbSet<PromotionProduct> PromotionProducts => Set<PromotionProduct>();
     public DbSet<PromotionCustomerTier> PromotionCustomerTiers => Set<PromotionCustomerTier>();
+    public DbSet<Voucher> Vouchers => Set<Voucher>();
+    public DbSet<VoucherUse> VoucherUses => Set<VoucherUse>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<OrderInternalNote> OrderInternalNotes => Set<OrderInternalNote>();
@@ -85,6 +87,24 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         ConfigurePromotionProduct(modelBuilder.Entity<PromotionProduct>());
         ConfigurePromotionCustomerTier(modelBuilder.Entity<PromotionCustomerTier>());
         ConfigureOrder(modelBuilder.Entity<Order>());
+        modelBuilder.Entity<Voucher>(e => {
+            e.ToTable("Vouchers", t => {
+                t.HasCheckConstraint("CK_Vouchers_Rules", "[Status] IN ('Draft','Published','Disabled') AND [DiscountType] IN ('Percent','Fixed') AND [DiscountValue] > 0 AND ([DiscountType] <> 'Percent' OR [DiscountValue] <= 100) AND [MinimumSpend] >= 0 AND ([MaxDiscount] IS NULL OR [MaxDiscount] > 0) AND [EndsAt] > [StartsAt] AND [TotalLimit] > 0 AND ([PerUserLimit] IS NULL OR [PerUserLimit] > 0) AND ISJSON([ProductIds])=1 AND ISJSON([TierIds])=1");
+            });
+            e.HasKey(v => v.Id); e.HasIndex(v => v.Code).IsUnique(); e.HasIndex(v => v.CreationKey).IsUnique();
+            e.Property(v => v.Code).HasMaxLength(40); e.Property(v => v.Name).HasMaxLength(150);
+            e.Property(v => v.Status).HasMaxLength(12); e.Property(v => v.DiscountType).HasMaxLength(10);
+            e.Property(v => v.DiscountValue).HasPrecision(18,2); e.Property(v => v.MaxDiscount).HasPrecision(18,0); e.Property(v => v.MinimumSpend).HasPrecision(18,0);
+            e.Property(v => v.StartsAt).HasColumnType("datetime2(3)").HasConversion(UtcConverter); e.Property(v => v.EndsAt).HasColumnType("datetime2(3)").HasConversion(UtcConverter);
+            e.Property(v => v.RequestHash).HasMaxLength(32); e.Property(v => v.Version).IsRowVersion();
+        });
+        modelBuilder.Entity<VoucherUse>(e => {
+            e.ToTable("VoucherUses"); e.HasKey(v => v.OrderId);
+            e.HasIndex(v => new {v.VoucherId,v.Released,v.UserId});
+            e.HasOne<Order>().WithOne().HasForeignKey<VoucherUse>(v => v.OrderId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne<Voucher>().WithMany().HasForeignKey(v => v.VoucherId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne<ApplicationUser>().WithMany().HasForeignKey(v => v.UserId).OnDelete(DeleteBehavior.NoAction);
+        });
         ConfigureOrderItem(modelBuilder.Entity<OrderItem>());
         ConfigureOrderInternalNote(modelBuilder.Entity<OrderInternalNote>());
         ConfigureOrderStatusHistory(modelBuilder.Entity<OrderStatusHistory>());
@@ -450,7 +470,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         entity.ToTable("Orders", table =>
         {
             table.HasCheckConstraint("CK_Orders_Currency", "[Currency] = 'VND'");
-            table.HasCheckConstraint("CK_Orders_Totals", "[Subtotal] >= 0 AND [DiscountTotal] >= 0 AND [ShippingFee] >= 0 AND [GrandTotal] >= 0 AND [DiscountTotal] <= [Subtotal] AND [GrandTotal] = [Subtotal] - [DiscountTotal] + [ShippingFee]");
+            table.HasCheckConstraint("CK_Orders_Totals", "[Subtotal] >= 0 AND [DiscountTotal] >= 0 AND [ShippingFee] >= 0 AND [GrandTotal] >= 0 AND [VoucherDiscountTotal] >= 0 AND [VoucherDiscountTotal] <= [DiscountTotal] AND [DiscountTotal] <= [Subtotal] AND [GrandTotal] = [Subtotal] - [DiscountTotal] + [ShippingFee]");
             table.HasCheckConstraint("CK_Orders_Status", "[Status] IN ('Placed', 'Reviewing', 'Approved', 'Shipping', 'Delivered', 'Completed', 'Cancelled')");
             table.HasCheckConstraint("CK_Orders_PaymentMethod", "[PaymentMethod] IN ('COD', 'BankTransfer')");
             table.HasCheckConstraint("CK_Orders_TierCodeSnapshot", "[TierCodeSnapshot] IS NULL OR [TierCodeSnapshot] IN ('Bronze', 'Silver', 'Gold', 'Diamond')");
@@ -471,6 +491,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         entity.Property(x => x.Currency).HasMaxLength(3).IsUnicode(false).IsFixedLength().IsRequired(true);
         entity.Property(x => x.Subtotal).HasPrecision(18, 0);
         entity.Property(x => x.DiscountTotal).HasPrecision(18, 0);
+        entity.Property(x => x.VoucherCode).HasMaxLength(40);
+        entity.Property(x => x.VoucherDiscountTotal).HasPrecision(18, 0).HasDefaultValue(0m);
         entity.Property(x => x.ShippingFee).HasPrecision(18, 0);
         entity.Property(x => x.GrandTotal).HasPrecision(18, 0);
         entity.Property(x => x.TierCodeSnapshot).HasConversion<string>().HasMaxLength(20).IsUnicode(false);

@@ -234,3 +234,31 @@ p { line-height: 1.65; }
 .admin-header{flex-wrap:wrap;gap:16px}.admin-session-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.admin-session-actions .button{min-height:40px}.admin-session-actions .notice{flex-basis:100%}
 .payment-panel{margin-top:24px;overflow-wrap:anywhere}.payment-panel form{margin:20px 0}.payment-row{padding:20px 0;border-top:1px solid var(--border)}.payment-totals{display:flex;gap:24px;flex-wrap:wrap}.payment-totals dd{margin:4px 0;font-weight:700}
 .membership-ledger{list-style:none;padding:0;overflow-wrap:anywhere}.membership-ledger li{padding:16px 0;border-bottom:1px solid var(--line)}.membership-ledger small{display:block;margin-top:6px}.membership-page{max-width:960px;margin:auto;overflow-wrap:anywhere}.membership-page fieldset{display:grid;gap:12px;min-width:0}.membership-page .pagination{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:16px 0}
+.promotion-targets{max-height:240px;overflow:auto;display:grid;gap:10px;padding:12px;border:1px solid var(--line)}.promotion-targets label{display:flex;gap:8px;align-items:center}.membership-page form{margin:16px 0}.membership-page>button,.membership-page> .button{margin:8px 8px 8px 0}
+.checkout-voucher { margin: 20px 0; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: #f4f6f1; overflow-wrap: anywhere; } .checkout-voucher h3, .checkout-voucher .field { margin-bottom: 12px; } .checkout-voucher .button { width: 100%; margin-bottom: 12px; padding: 12px; }
+.review-card { padding: 20px 0; border-bottom: 1px solid var(--line); min-width: 0; overflow-wrap: anywhere; } .review-card.catalog-panel { padding: 24px; margin-top: 20px; } .review-card > small { display: block; margin: 10px 0; } .review-stars { display: block; color: #976300; letter-spacing: .1em; margin: 10px 0; } .review-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 12px 0; } .review-reply { background: #f4f6f1; padding: 16px; border-radius: 8px; margin: 12px 0; } .product-reviews { margin-top: 24px; }
+.survey-card { margin-top: 24px; min-width: 0; overflow-wrap: anywhere; } .survey-text { white-space: pre-wrap; overflow-wrap: anywhere; } .survey-question { padding: 18px; margin: 16px 0; border: 1px solid var(--line); border-radius: 8px; min-width: 0; } .survey-option { display: flex; align-items: start; gap: 12px; padding: 10px 0; } .survey-option input { flex-shrink: 0; margin-top: 3px; } .survey-option-editor { display: flex; gap: 12px; align-items: end; margin-bottom: 12px; } .survey-result-option { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 12px 0; } .survey-result-option strong { flex-shrink: 0; } .survey-text-answer { padding: 14px 0; border-bottom: 1px solid var(--line); } @media(max-width:560px) { .survey-option-editor { flex-direction: column; align-items: stretch; } }
+.phone-brands { margin-top: 32px; }
+.phone-brand-links { display: flex; flex-wrap: wrap; gap: 12px; padding: 0; list-style: none; }
+.phone-brand-links a { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 18px 24px; border: 1px solid #c8d3bc; border-radius: 12px; background: #f3f6ee; color: inherit; text-decoration: none; }
+.phone-brand-links a:hover { background: #e3ecd9; border-color: #8d9d7c; }
+.phone-classification { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 24px; }
+.phone-classification fieldset { min-width: 0; margin: 0; padding: 18px; border: 1px solid #c8d3bc; border-radius: 12px; background: #fafcf7; }
+.phone-classification legend { padding: 0 6px; font-weight: 700; }
+.phone-classification p { margin: 0 0 14px; font-size: .9rem; color: #526047; }
+@media (max-width: 600px) { .phone-classification { grid-template-columns: 1fr; } .phone-brand-links li { flex: 1 1 120px; } .phone-brand-links a { gap: 16px; padding: 16px; } }
+.phone-brand-links li { max-width: 100%; }
+.phone-brand-links strong { min-width: 0; overflow-wrap: anywhere; }
+.admin-report > .catalog-panel, .admin-report > .report-columns { margin-top: 24px; }
+.report-filters { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; padding: 20px; background: #f0f4ec; border-radius: 12px; }
+.report-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
+.report-metrics article { min-width: 0; }.report-metrics h2 { font-size: .95rem; }.report-metrics strong { display: block; font-size: 1.5rem; overflow-wrap: anywhere; }.report-metrics p { font-size: .85rem; color: #53614d; }
+.report-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.report-chart { display: block; width: 100%; max-height: 280px; }
+.report-legend { display: flex; flex-wrap: wrap; gap: 20px; font-size: .9rem; }.report-legend span { display: inline-flex; align-items: center; gap: 8px; }.report-legend i { width: 10px; height: 10px; border-radius: 50%; }.received-dot { background: #17614f; }.refund-dot { background: #b65836; }
+.report-statuses, .report-queue { list-style: none; padding: 0; }.report-statuses li { display: flex; flex-wrap: wrap; justify-content: space-between; margin: 12px 0; gap: 6px; }.report-statuses li div { height: 5px; background: #17614f; border-radius: 5px; }.report-queue a { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; }
+.report-table-wrap { max-width: 100%; overflow-x: auto; }.report-table-wrap table { width: 100%; border-collapse: collapse; text-align: left; }.report-table-wrap th, .report-table-wrap td { padding: 12px; border-bottom: 1px solid #dce4d7; }.report-table-wrap th { background: #f0f4ec; white-space: nowrap; }.daily-report { max-height: 360px; }.daily-report td { white-space: nowrap; }.daily-report th { position: sticky; top: 0; }
+@media (max-width: 900px) { .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.report-columns { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .report-metrics { grid-template-columns: 1fr; }.report-filters > .field { width: 100%; }.admin-report .catalog-panel { min-width: 0; }.report-table-wrap { width: 100%; } }
+.admin-body { min-width: 0; }
+.admin-main:has(.admin-report) { width: 100%; min-width: 0; }

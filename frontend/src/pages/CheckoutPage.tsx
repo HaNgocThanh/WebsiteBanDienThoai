@@ -3,13 +3,14 @@ import { OrderPayments } from './OrderPayments'
 import { Link, useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { readCart, useCart } from '../cart/CartContext'
-import { cartMatches, readPendingCheckout, savePendingCheckout } from '../checkout/pending'
+import { cartMatches, readPendingCheckout, rememberCheckoutCompleted, savePendingCheckout } from '../checkout/pending'
 import type { PendingCheckout } from '../checkout/pending'
 import { AddressFields } from '../components/AddressFields'
 import { EmptyState, ErrorNotice, SubmitButton, TextField } from '../components/primitives'
 import { formatVietnamTime, formatVnd } from '../lib/contracts'
 import { ApiError, fieldError } from '../services/errors'
-import { emptyDestination } from '../services/locations'
+import { emptyDestination, locations } from '../services/locations'
+import { getAddresses, getProfile } from '../services/profile'
 import { orders, orderStatuses } from '../services/orders'
 import type { OrderBody, PaymentMethod, PlacedOrder } from '../services/orders'
 import { quotes } from '../services/quotes'
@@ -29,14 +30,48 @@ export function CheckoutPage() {
   const [validation, setValidation] = useState<Record<string, string[]>>({}), [error, setError] = useState<ApiError>()
   const [quoteState, setQuoteState] = useState<{ key: string; quote: Quote; confirmed: boolean; changed: boolean }>()
   const [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false), [recovering, setRecovering] = useState(true)
+  const [voucherInput, setVoucherInput] = useState(''), [voucherCode, setVoucherCode] = useState('')
   const [priceChanged, setPriceChanged] = useState(false)
+  const [prefillBusy, setPrefillBusy] = useState(false), [prefillError, setPrefillError] = useState<ApiError>(), [prefillMessage, setPrefillMessage] = useState(''), [prefillRetry, setPrefillRetry] = useState(0)
+  const edited = useRef({ name: false, phone: false, address: false }), prefillOwner = useRef(auth.user?.userId ?? 'guest'), frozenRef = useRef(false)
   const [saved, setSaved] = useState(() => { try { return { pending: readPendingCheckout(), error: undefined as ApiError | undefined } } catch (e) { return { pending: null, error: failure(e) } } })
   const pending = useRef<PendingCheckout | null>(saved.pending), attempt = useRef<OrderBody | null>(null), lock = useRef(false)
-  const key = JSON.stringify([cart.items, destination]), owner = auth.user?.userId ?? 'guest', currentOwner = useRef(owner); currentOwner.current = owner
+  const owner = auth.user?.userId ?? 'guest', key = JSON.stringify([owner, cart.items, destination, voucherCode]), currentOwner = useRef(owner); currentOwner.current = owner
   const currentKey = useRef(key); currentKey.current = key
   const shown = quoteState?.key === key ? quoteState : undefined
   const frozen = busy || uncertain
+  frozenRef.current = frozen
+  useEffect(() => {
+    if (auth.status === 'loading') return
+    if (prefillOwner.current !== owner) {
+      prefillOwner.current = owner; edited.current = { name: false, phone: false, address: false }
+      if (!frozenRef.current) { setName(''); setPhone(''); setVoucherCode(''); setVoucherInput(''); setDestination(emptyDestination); setQuoteState(undefined); setPrefillMessage('') }
+    }
+    setPrefillBusy(false); setPrefillError(undefined)
+    if (auth.status !== 'authenticated' || !auth.user || frozenRef.current) return
+    const abort = new AbortController(); setPrefillBusy(true); setPrefillError(undefined)
+    Promise.all([getProfile(abort.signal), getAddresses(abort.signal)]).then(async ([profile, addresses]) => {
+      const address = addresses.find(a => a.isDefault)
+      if (abort.signal.aborted || currentOwner.current !== profile.userId || frozenRef.current) return
+      if (!edited.current.name) setName(address?.recipientName || profile.fullName)
+      if (!edited.current.phone) setPhone(address?.phone || profile.phone || '')
+      let resolved = emptyDestination, message = address ? 'Đã tự điền địa chỉ mặc định. Bạn có thể chỉnh sửa thông tin nhận hàng.' : 'Đã điền thông tin tài khoản. Bạn chưa có địa chỉ mặc định.'
+      if (address) {
+        const province = address.countryCode.toUpperCase() === 'VN' ? (await locations.provinces(abort.signal)).items.find(p => p.name === address.province) : undefined
+        const ward = province ? (await locations.wards(province.code, abort.signal)).items.find(w => w.name === address.locality) : undefined
+        resolved = { ...emptyDestination, addressLine: address.addressLine, province: province?.name ?? '', provinceCode: province?.code ?? '', locality: ward?.name ?? '', wardCode: ward?.code ?? '' }
+        if (!province || !ward) message = 'Địa chỉ mặc định chưa khớp danh mục hiện hành. Hãy chọn lại tỉnh/thành phố và phường/xã.'
+      }
+      if (abort.signal.aborted || currentOwner.current !== profile.userId || frozenRef.current) return
+      if (address && !edited.current.address) { setDestination(resolved); setQuoteState(undefined) }
+      setPrefillMessage(message)
+    }).catch(e => { if (!abort.signal.aborted) setPrefillError(failure(e)) }).finally(() => { if (!abort.signal.aborted) setPrefillBusy(false) })
+    return () => abort.abort()
+    // Profile reads are tied to identity and explicit retry, not manual edits or quotes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.status, owner, prefillRetry])
   function complete(order: PlacedOrder, operation: PendingCheckout) {
+    rememberCheckoutCompleted(operation.key)
     // The committed cart may have changed in another tab while this request awaited the network.
     try { if (cartMatches(operation.items, readCart())) cart.clear() } catch { /* Preserve a corrupt/new cart; the committed order remains successful. */ }
     navigate('/checkout/success', { replace: true, state: { order } })
@@ -66,14 +101,14 @@ export function CheckoutPage() {
     if (Object.keys(errors).length) { requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.checkout-form input[aria-invalid="true"]')?.focus()); return false }
     return true
   }
-  async function calculate() {
+  async function calculate(selectedCode = voucherCode) {
     if (lock.current || !validate() || !cart.items.length || cart.error) return
     lock.current = true; setBusy(true); setError(undefined)
-    const requestKey = key
+    setVoucherCode(selectedCode); const requestKey = JSON.stringify([owner, cart.items, destination, selectedCode])
     try {
       let changed = priceChanged, quote: Quote
-      try { quote = await quotes.get(cart.items, destination, shown?.quote.quoteHash) }
-      catch (e) { if (!(e instanceof ApiError) || e.code !== 'PRICE_CHANGED') throw e; changed = true; quote = await quotes.get(cart.items, destination) }
+      try { quote = await quotes.get(cart.items, destination, selectedCode === voucherCode ? shown?.quote.quoteHash : undefined, undefined, selectedCode || undefined) }
+      catch (e) { if (!(e instanceof ApiError) || e.code !== 'PRICE_CHANGED') throw e; changed = true; quote = await quotes.get(cart.items, destination, undefined, undefined, selectedCode || undefined) }
       if (currentKey.current === requestKey) setQuoteState({ key: requestKey, quote, confirmed: false, changed })
     } catch (e) { setQuoteState(undefined); setError(failure(e)) }
     finally { lock.current = false; setBusy(false) }
@@ -93,7 +128,7 @@ export function CheckoutPage() {
       if (result.order) { if (currentOwner.current === requestedOwner) complete(result.order, operation); return }
       if (result.state === 'Expired') { savePendingCheckout(null); pending.current = null; attempt.current = null; setUncertain(false); throw new ApiError(409, 'CHECKOUT_EXPIRED') }
       if (!attempt.current) {
-        attempt.current = { ...destination, items: cart.items.map(i => ({ ...i })), recipientName: name.trim(), phone: phone.trim(), note: note.trim(), countryCode: 'VN', paymentMethod: payment, quoteHash: shown!.quote.quoteHash, createAccountConsent: auth.user ? false : consent, ...(auth.user ? {} : { email: email.trim(), consentTextVersion: 'account-create-v1' }) }
+        attempt.current = { ...destination, items: cart.items.map(i => ({ ...i })), recipientName: name.trim(), phone: phone.trim(), note: note.trim(), countryCode: 'VN', paymentMethod: payment, quoteHash: shown!.quote.quoteHash, ...(voucherCode ? { voucherCode } : {}), createAccountConsent: auth.user ? false : consent, ...(auth.user ? {} : { email: email.trim(), consentTextVersion: 'account-create-v1' }) }
         const updated = { key: operation.key, items: attempt.current.items }; savePendingCheckout(updated); pending.current = updated; setSaved({ pending: updated, error: undefined })
       }
       const order = await orders.place(operation.key, attempt.current)
@@ -102,7 +137,7 @@ export function CheckoutPage() {
     } catch (e) {
       const err = failure(e); setError(err)
       if (err.status === 0 || err.status >= 500 || err.code === 'CHECKOUT_BUSY' || err.code === 'IDEMPOTENCY_PAYLOAD_MISMATCH') setUncertain(true)
-      else { attempt.current = null; setUncertain(false); if (err.code === 'PRICE_CHANGED') setPriceChanged(true); if (['PRICE_CHANGED', 'OUT_OF_STOCK', 'VARIANT_UNAVAILABLE', 'CHECKOUT_EXPIRED'].includes(err.code)) setQuoteState(undefined) }
+      else { attempt.current = null; setUncertain(false); if (err.code === 'PRICE_CHANGED') setPriceChanged(true); if (err.code.startsWith('VOUCHER_') || ['PRICE_CHANGED', 'OUT_OF_STOCK', 'VARIANT_UNAVAILABLE', 'CHECKOUT_EXPIRED'].includes(err.code)) setQuoteState(undefined) }
     } finally { lock.current = false; setBusy(false) }
   }
   async function recover() {
@@ -123,18 +158,19 @@ export function CheckoutPage() {
     {!cart.items.length && !pending.current ? <EmptyState title="Giỏ hàng đang trống" action={<Link className="button" to="/products">Chọn điện thoại</Link>}><p>Thêm sản phẩm để đặt hàng.</p></EmptyState> : <>
       {pending.current && <div className="notice"><p>Đang giữ phiên đặt hàng trước. Nếu mất phản hồi, kiểm tra kết quả trước khi đặt đơn mới.</p><SubmitButton type="button" busy={busy} className="button-outline" onClick={() => void recover()}>Kiểm tra kết quả đặt hàng</SubmitButton></div>}
       {uncertain && <p className="notice" role="status">Chưa xác định được kết quả. Thử lại sẽ dùng đúng yêu cầu trước, không tạo đơn trùng. Thông tin đang được giữ để tránh thay đổi khi gửi lại.</p>}
+      {prefillBusy && <p role="status">Đang lấy thông tin tài khoản và địa chỉ mặc định…</p>}{prefillMessage && <p className="notice">{prefillMessage}</p>}{prefillError && <><ErrorNotice error={prefillError} /><button disabled={frozen} onClick={() => setPrefillRetry(n => n + 1)}>Tải lại thông tin nhận hàng</button></>}
       <div className="checkout-grid"><form id="checkout-order" className="catalog-panel checkout-form" noValidate onSubmit={e => { e.preventDefault(); void submit() }}><fieldset disabled={frozen || !!saved.error || auth.status === 'error'}><legend>Thông tin nhận hàng</legend>
-        <TextField label="Họ tên người nhận" required maxLength={150} autoComplete="name" value={name} error={field('recipientName')} onChange={e => setName(e.target.value)} />
-        <TextField label="Số điện thoại" type="tel" required maxLength={30} autoComplete="tel" value={phone} error={field('phone')} onChange={e => setPhone(e.target.value)} />
+        <TextField label="Họ tên người nhận" required maxLength={150} autoComplete="name" value={name} error={field('recipientName')} onChange={e => { edited.current.name = true; setName(e.target.value) }} />
+        <TextField label="Số điện thoại" type="tel" required maxLength={30} autoComplete="tel" value={phone} error={field('phone')} onChange={e => { edited.current.phone = true; setPhone(e.target.value) }} />
         <TextField label="Email nhận đơn" type="email" required maxLength={256} autoComplete="email" readOnly={!!auth.user} value={auth.user?.email ?? email} error={field('email')} hint={auth.user ? 'Dùng email đã xác minh của tài khoản.' : 'Liên kết xem đơn sẽ gửi đến email này; không cần tài khoản.'} onChange={e => setEmail(e.target.value)} />
-        <AddressFields value={destination} onChange={value => { setDestination(value); setQuoteState(undefined) }} />{validation.address && <p className="field-error" role="alert">{validation.address[0]}</p>}
+        <AddressFields value={destination} onChange={value => { edited.current.address = true; setDestination(value); setQuoteState(undefined) }} />{validation.address && <p className="field-error" role="alert">{validation.address[0]}</p>}
         <TextField label="Ghi chú giao hàng (tùy chọn)" maxLength={1000} value={note} onChange={e => setNote(e.target.value)} />
         <fieldset className="payment-options"><legend>Phương thức thanh toán</legend><label><input type="radio" name="payment" checked={payment === 'COD'} onChange={() => setPayment('COD')} /> Thanh toán khi nhận hàng (COD)</label><label><input type="radio" name="payment" checked={payment === 'BankTransfer'} onChange={() => setPayment('BankTransfer')} /> Chuyển khoản ngân hàng</label></fieldset>
         {payment === 'BankTransfer' && <p className="muted">Đơn chuyển khoản có hạn thanh toán 24 giờ từ lúc tạo đơn. Cửa hàng sẽ liên hệ để hướng dẫn chuyển khoản.</p>}
         {!auth.user && <label className="checkout-consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /> Tôi đồng ý nhận hướng dẫn tạo tài khoản để quản lý đơn hàng. Không chọn vẫn đặt hàng được.</label>}
         <SubmitButton type="button" busy={busy} className="button-outline" onClick={() => void calculate()}>Tính báo giá</SubmitButton>
       </fieldset></form>
-      <aside className="catalog-panel cart-quote checkout-summary"><h2>Đơn hàng của bạn</h2>{shown ? <><ul className="order-lines">{shown.quote.items.map(i => <li key={i.variantId}><strong>{i.productName}</strong><span>{i.color} · {i.storageGb} GB · RAM {i.ramGb} GB</span><span>{i.quantity} × {formatVnd(i.unitPrice - i.unitDiscount)}</span><strong>{formatVnd(i.lineTotal)}</strong></li>)}</ul><dl><div><dt>Tiền hàng</dt><dd>{formatVnd(shown.quote.subtotal)}</dd></div><div><dt>Giảm giá</dt><dd>{formatVnd(shown.quote.discountTotal)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatVnd(shown.quote.shippingFee)}</dd></div><div><dt>Tổng cộng</dt><dd>{formatVnd(shown.quote.grandTotal)}</dd></div></dl>{shown.changed && <p className="notice notice-error" role="alert">Giá hoặc phí đã thay đổi. Xem và xác nhận báo giá mới.</p>}<label className="checkout-consent"><input type="checkbox" checked={shown.confirmed} disabled={frozen} onChange={e => setQuoteState({ ...shown, confirmed: e.target.checked })} /> Tôi xác nhận sản phẩm, số lượng và tổng tiền trên.</label></> : <p className="muted">Nhập thông tin nhận hàng và tính báo giá để xem tổng tiền từ cửa hàng.</p>}<p className="muted">TP. Hồ Chí Minh miễn phí; tỉnh/thành khác 30.000 VND/đơn. Báo giá chưa giữ hàng.</p><SubmitButton form="checkout-order" busy={busy} disabled={!!saved.error || auth.status === 'error' || !uncertain && (!shown?.confirmed || !!cart.error)}>{uncertain ? 'Thử lại yêu cầu đặt hàng' : 'Đặt hàng'}</SubmitButton><Link to="/cart">Quay lại giỏ hàng</Link></aside></div>
+      <aside className="catalog-panel cart-quote checkout-summary"><h2>Đơn hàng của bạn</h2><section className="checkout-voucher" aria-label="Voucher"><h3>Voucher</h3><TextField label="Mã voucher" maxLength={40} value={voucherInput} disabled={frozen} onChange={e => setVoucherInput(e.target.value)} /><button type="button" className="button button-outline" disabled={frozen || !voucherInput.trim() || !!saved.error || auth.status === 'error'} onClick={() => void calculate(voucherInput.trim().toUpperCase())}>Áp dụng voucher</button>{voucherCode && <button type="button" className="button button-outline" disabled={frozen} onClick={() => { setVoucherInput(''); void calculate('') }}>Gỡ voucher</button>}{shown?.quote.voucherCode && <p role="status">Đã áp dụng {shown.quote.voucherCode}: giảm {formatVnd(shown.quote.voucherDiscountTotal ?? 0)}.</p>}</section>{shown ? <><ul className="order-lines">{shown.quote.items.map(i => <li key={i.variantId}><strong>{i.productName}</strong><span>{i.color} · {i.storageGb} GB · RAM {i.ramGb} GB</span><span>{i.quantity} × {formatVnd(i.unitPrice - i.unitDiscount)}</span><strong>{formatVnd(i.lineTotal)}</strong>{i.promotionName && <small>{i.promotionName} · Giảm {formatVnd(i.unitDiscount)} mỗi sản phẩm</small>}</li>)}</ul><dl><div><dt>Tiền hàng</dt><dd>{formatVnd(shown.quote.subtotal)}</dd></div><div><dt>Khuyến mãi sản phẩm</dt><dd>{formatVnd(shown.quote.discountTotal - (shown.quote.voucherDiscountTotal ?? 0))}</dd></div>{!!shown.quote.voucherDiscountTotal && <div><dt>Voucher {shown.quote.voucherCode}</dt><dd>{formatVnd(shown.quote.voucherDiscountTotal)}</dd></div>}<div><dt>Tổng giảm giá</dt><dd>{formatVnd(shown.quote.discountTotal)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatVnd(shown.quote.shippingFee)}</dd></div><div><dt>Tổng cộng</dt><dd>{formatVnd(shown.quote.grandTotal)}</dd></div></dl>{shown.changed && <p className="notice notice-error" role="alert">Giá hoặc phí đã thay đổi. Xem và xác nhận báo giá mới.</p>}<label className="checkout-consent"><input type="checkbox" checked={shown.confirmed} disabled={frozen} onChange={e => setQuoteState({ ...shown, confirmed: e.target.checked })} /> Tôi xác nhận sản phẩm, số lượng và tổng tiền trên.</label></> : <p className="muted">Nhập thông tin nhận hàng và tính báo giá để xem tổng tiền từ cửa hàng.</p>}<p className="muted">TP. Hồ Chí Minh miễn phí; tỉnh/thành khác 30.000 VND/đơn. Báo giá chưa giữ hàng.</p><SubmitButton form="checkout-order" busy={busy} disabled={!!saved.error || auth.status === 'error' || !uncertain && (!shown?.confirmed || !!cart.error)}>{uncertain ? 'Thử lại yêu cầu đặt hàng' : 'Đặt hàng'}</SubmitButton><Link to="/cart">Quay lại giỏ hàng</Link></aside></div>
     </>}
   </section>
 }
@@ -148,7 +184,7 @@ export function CheckoutSuccessPage() {
       setBusy(true); setError(undefined)
       try {
       const operation = readPendingCheckout(); if (!operation) { setBusy(false); return }
-      orders.result(operation.key, controller.signal).then(result => { if (!controller.signal.aborted) { if (result.order) { setOrder(result.order); setReceiptKey(operation.key) } else setError(new ApiError(409, 'CHECKOUT_NOT_COMPLETED')) } }).catch(e => { if (!controller.signal.aborted) setError(failure(e)) }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
+      orders.result(operation.key, controller.signal).then(result => { if (!controller.signal.aborted) { if (result.order) { rememberCheckoutCompleted(operation.key); setOrder(result.order); setReceiptKey(operation.key) } else setError(new ApiError(409, 'CHECKOUT_NOT_COMPLETED')) } }).catch(e => { if (!controller.signal.aborted) setError(failure(e)) }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
       } catch (e) { setError(failure(e)); setBusy(false) }
     })
     return () => controller.abort()

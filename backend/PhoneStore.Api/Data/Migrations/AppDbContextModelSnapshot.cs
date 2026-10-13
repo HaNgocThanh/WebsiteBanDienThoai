@@ -1027,6 +1027,16 @@ namespace PhoneStore.Api.Data.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<string>("VoucherCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<decimal>("VoucherDiscountTotal")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18)
+                        .HasColumnType("decimal(18,0)")
+                        .HasDefaultValue(0m);
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt")
@@ -1058,7 +1068,7 @@ namespace PhoneStore.Api.Data.Migrations
 
                             t.HasCheckConstraint("CK_Orders_TierCodeSnapshot", "[TierCodeSnapshot] IS NULL OR [TierCodeSnapshot] IN ('Bronze', 'Silver', 'Gold', 'Diamond')");
 
-                            t.HasCheckConstraint("CK_Orders_Totals", "[Subtotal] >= 0 AND [DiscountTotal] >= 0 AND [ShippingFee] >= 0 AND [GrandTotal] >= 0 AND [DiscountTotal] <= [Subtotal] AND [GrandTotal] = [Subtotal] - [DiscountTotal] + [ShippingFee]");
+                            t.HasCheckConstraint("CK_Orders_Totals", "[Subtotal] >= 0 AND [DiscountTotal] >= 0 AND [ShippingFee] >= 0 AND [GrandTotal] >= 0 AND [VoucherDiscountTotal] >= 0 AND [VoucherDiscountTotal] <= [DiscountTotal] AND [DiscountTotal] <= [Subtotal] AND [GrandTotal] = [Subtotal] - [DiscountTotal] + [ShippingFee]");
                         });
                 });
 
@@ -2282,6 +2292,117 @@ namespace PhoneStore.Api.Data.Migrations
                     b.ToTable("SurveyResponses", (string)null);
                 });
 
+            modelBuilder.Entity("PhoneStore.Api.Entities.Voucher", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<Guid>("CreationKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DiscountType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<decimal>("DiscountValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("EndsAt")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<decimal?>("MaxDiscount")
+                        .HasPrecision(18)
+                        .HasColumnType("decimal(18,0)");
+
+                    b.Property<decimal>("MinimumSpend")
+                        .HasPrecision(18)
+                        .HasColumnType("decimal(18,0)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<int?>("PerUserLimit")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProductIds")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varbinary(32)");
+
+                    b.Property<DateTime>("StartsAt")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<string>("TierIds")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("TotalLimit")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("CreationKey")
+                        .IsUnique();
+
+                    b.ToTable("Vouchers", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Vouchers_Rules", "[Status] IN ('Draft','Published','Disabled') AND [DiscountType] IN ('Percent','Fixed') AND [DiscountValue] > 0 AND ([DiscountType] <> 'Percent' OR [DiscountValue] <= 100) AND [MinimumSpend] >= 0 AND ([MaxDiscount] IS NULL OR [MaxDiscount] > 0) AND [EndsAt] > [StartsAt] AND [TotalLimit] > 0 AND ([PerUserLimit] IS NULL OR [PerUserLimit] > 0) AND ISJSON([ProductIds])=1 AND ISJSON([TierIds])=1");
+                        });
+                });
+
+            modelBuilder.Entity("PhoneStore.Api.Entities.VoucherUse", b =>
+                {
+                    b.Property<long>("OrderId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("Released")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("VoucherId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("OrderId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("VoucherId", "Released", "UserId");
+
+                    b.ToTable("VoucherUses", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
@@ -2902,6 +3023,26 @@ namespace PhoneStore.Api.Data.Migrations
                     b.Navigation("Survey");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("PhoneStore.Api.Entities.VoucherUse", b =>
+                {
+                    b.HasOne("PhoneStore.Api.Entities.Order", null)
+                        .WithOne()
+                        .HasForeignKey("PhoneStore.Api.Entities.VoucherUse", "OrderId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("PhoneStore.Api.Entities.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("PhoneStore.Api.Entities.Voucher", null)
+                        .WithMany()
+                        .HasForeignKey("VoucherId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PhoneStore.Api.Entities.ApplicationUser", b =>

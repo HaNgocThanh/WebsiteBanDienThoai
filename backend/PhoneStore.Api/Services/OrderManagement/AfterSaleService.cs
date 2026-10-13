@@ -164,6 +164,7 @@ public sealed class AfterSaleService(AppDbContext db, TimeProvider clock, PhoneS
         var previous = order.Status; order.Status = OrderStatus.Cancelled; order.CancelledAt = Now; order.PaymentDueAt = null;
         db.OrderStatusHistories.Add(new() { OrderId = order.Id, FromStatus = previous, ToStatus = OrderStatus.Cancelled, ActorUserId = access.UserId, ActorType = access.Admin ? OrderActorType.Admin : access.UserId is null ? OrderActorType.System : OrderActorType.Customer, Reason = reason, CreatedAt = Now });
         var payments = await db.Payments.Where(p => p.OrderId == order.Id && p.Status == PaymentStatus.Confirmed).OrderBy(p => p.Id).ToListAsync(ct);
+        if (!returned && payments.Count == 0) await PhoneStore.Api.Services.Vouchers.VoucherService.Release(db, order.Id, ct);
         var active = await db.Refunds.Where(r => r.Payment.OrderId == order.Id && r.Status != RefundStatus.Failed).ToListAsync(ct);
         var merchandiseCapacity = order.Subtotal - order.DiscountTotal - active.Sum(r => r.MerchandiseAmount); var shippingCapacity = order.ShippingFee - active.Sum(r => r.ShippingAmount);
         foreach (var payment in payments) {

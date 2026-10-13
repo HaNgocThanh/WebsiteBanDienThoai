@@ -22,3 +22,23 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Private tooling, fixtures and credentials stay local.
+.env
+.env.*
+*.md
+AGENTS.md
+.agents/
+.codex/
+.cursor/
+e2e/
+src/test/
+**/*.test.*
+**/*.spec.*
+playwright*.config.ts
+vitest.config.ts
+test-results/
+playwright-report/
+*.ps1
+src/assets/react.svg
+src/assets/vite.svg

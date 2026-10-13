@@ -12,7 +12,7 @@ using PhoneStore.Api.Entities;
 using PhoneStore.Api.Services.Pricing;
 
 namespace PhoneStore.Api.Services.Checkout;
-public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserManager<ApplicationUser> users, TimeProvider clock, IConfiguration configuration)
+public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserManager<ApplicationUser> users, TimeProvider clock, IConfiguration configuration, PhoneStore.Api.Services.Promotions.PromotionService promotions, PhoneStore.Api.Services.Vouchers.VoucherService vouchers)
 {
     public const string ConsentVersion = "account-create-v1";
     private DateTime Now() { var now = clock.GetUtcNow().UtcDateTime; return new DateTime(now.Ticks - now.Ticks % TimeSpan.TicksPerMillisecond, DateTimeKind.Utc); }
@@ -79,7 +79,7 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
             throw new CheckoutException(400, "VALIDATION_ERROR", "Khách vãng lai cần email, lựa chọn tạo tài khoản và phiên bản nội dung đồng ý hợp lệ.");
         if (owner.UserId is not null && request.CreateAccountConsent == true) throw new CheckoutException(400, "VALIDATION_ERROR", "Tài khoản đăng nhập không cần tạo tài khoản mới.");
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, ct);
+        await promotions.LockPricingAsync(owner.UserId, ct);
         await LockAsync("PhoneStore.Checkout.Key:" + keyId.ToString("N"), "Exclusive", ct);
         var key = await db.IdempotencyRequests.SingleOrDefaultAsync(k => k.Id == keyId, ct);
         if (key is null || !Owned(key, owner)) throw new CheckoutException(404, "CHECKOUT_NOT_FOUND", "Không tìm thấy phiên checkout của bạn.");
@@ -94,6 +94,7 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
             email = normalizedEmail, recipientName = Text(request.RecipientName), phone = Text(request.Phone), address,
             request.PaymentMethod, createAccountConsent = request.CreateAccountConsent ?? false,
             consentTextVersion = owner.UserId is null ? request.ConsentTextVersion : null, request.QuoteHash, note }));
+        if (PhoneStore.Api.Services.Vouchers.VoucherService.Normalize(request.VoucherCode) is { } voucherCode) hash = SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { original = Convert.ToHexStringLower(hash), voucherCode }));
         if (key.Status == IdempotencyRequestStatus.Completed)
         {
             if (key.RequestHash is null || !CryptographicOperations.FixedTimeEquals(key.RequestHash, hash)) throw new CheckoutException(409, "IDEMPOTENCY_PAYLOAD_MISMATCH", "Phiên checkout đã dùng với nội dung khác.");
@@ -119,13 +120,14 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
             if (balance is null) throw new CheckoutException(409, "OUT_OF_STOCK", "Một phiên bản chưa có tồn kho khả dụng.");
             balances.Add(balance);
         }
-        var quote = await pricing.QuoteAsync(new(items, address, request.QuoteHash), ct);
+        var quote = await pricing.QuoteAsync(new(items, address, request.QuoteHash, request.VoucherCode), ct, owner.UserId);
+        if (quote.GrandTotal == 0) dueAt = null;
         var membership = account is null ? null : await db.CustomerProfiles.AsNoTracking().Where(p => p.UserId == account.Id).Select(p => new { p.TierId, Code = p.Tier == null ? (CustomerTierCode?)null : p.Tier.Code }).SingleOrDefaultAsync(ct);
         var order = new Order { OrderNumber = "PS" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(14)), UserId = owner.UserId,
             CustomerEmail = email, NormalizedCustomerEmail = normalizedEmail, RecipientName = Text(request.RecipientName), Phone = Text(request.Phone),
             AddressLine = address.AddressLine!, Locality = address.Locality, Province = address.Province, CountryCode = address.CountryCode,
             PaymentMethod = Enum.Parse<PaymentMethod>(request.PaymentMethod), Status = OrderStatus.Reviewing, Currency = "VND",
-            Subtotal = quote.Subtotal, DiscountTotal = quote.DiscountTotal, ShippingFee = quote.ShippingFee, GrandTotal = quote.GrandTotal,
+            VoucherCode = quote.VoucherCode, VoucherDiscountTotal = quote.VoucherDiscountTotal, Subtotal = quote.Subtotal, DiscountTotal = quote.DiscountTotal, ShippingFee = quote.ShippingFee, GrandTotal = quote.GrandTotal,
             TierIdAtPurchase = membership?.TierId, TierCodeSnapshot = membership?.Code, CustomerNote = note, PaymentDueAt = dueAt, CreatedAt = now };
         order.AccountConsent = new() { Accepted = request.CreateAccountConsent ?? false, ConsentTextVersion = owner.UserId is null ? ConsentVersion : "authenticated-v1", RecordedAt = now };
         order.StatusHistories.Add(new() { ToStatus = OrderStatus.Placed, ActorUserId = owner.UserId, ActorType = account is null ? OrderActorType.System : OrderActorType.Customer, Reason = "Checkout", CreatedAt = now });
@@ -135,19 +137,20 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
             var line = quote.Items[i]; var id = long.Parse(line.VariantId, CultureInfo.InvariantCulture);
             var item = new OrderItem { VariantId = id, ProductNameSnapshot = line.ProductName, SkuSnapshot = line.Sku,
                 VariantSnapshot = $"{line.Color} · {line.StorageGb} GB · RAM {line.RamGb} GB", Quantity = line.Quantity, UnitPrice = line.UnitPrice,
-                UnitDiscount = line.UnitDiscount, PromotionNameSnapshot = line.PromotionName };
+                UnitDiscount = line.UnitDiscount, PromotionNameSnapshot = line.PromotionName,
+                PromotionId = line.PromotionId is null ? null : long.Parse(line.PromotionId), PromotionRuleSnapshot = line.PromotionRule };
             item.StockReservation = new() { Quantity = line.Quantity, Status = StockReservationStatus.Active, ExpiresAt = dueAt, CreatedAt = now };
             item.InventoryMovements.Add(new() { VariantId = id, ActorUserId = owner.UserId, Kind = InventoryMovementKind.Reserve,
                 OnHandDelta = 0, ReservedDelta = line.Quantity, Reason = "Checkout", EventKey = $"Order.Reserve:{keyId:D}:{id}", RequestHash = hash, CreatedAt = now });
             balances[i].Reserved = checked(balances[i].Reserved + line.Quantity); order.Items.Add(item);
         }
-        db.Orders.Add(order); await db.SaveChangesAsync(ct);
+        db.Orders.Add(order); await db.SaveChangesAsync(ct); vouchers.Consume(quote, order);
         db.OutboxMessages.Add(new() { EventKey = "OrderPlaced:" + ApiContract.Id(order.Id), Type = "OrderPlaced",
             PayloadJson = JsonSerializer.Serialize(new { version = 1, orderId = ApiContract.Id(order.Id) }), CreatedAt = now, NextAttemptAt = now });
         db.OutboxMessages.Add(new() { EventKey = "OrderReviewing:" + ApiContract.Id(order.Id), Type = "OrderStateChanged",
             PayloadJson = JsonSerializer.Serialize(new { version = 1, orderId = ApiContract.Id(order.Id), fromStatus = "Placed", toStatus = "Reviewing" }), CreatedAt = now, NextAttemptAt = now });
         key.Status = IdempotencyRequestStatus.Completed; key.RequestHash = hash; key.OrderId = order.Id;
-        await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return new(Response(order), false);
+        await db.SaveChangesAsync(ct); pricing.CheckStillValid(quote); await transaction.CommitAsync(ct); return new(Response(order), false);
     }
     private static PlacedOrderDto Response(Order order) => new(ApiContract.Id(order.Id), order.OrderNumber, order.Status.ToString(),
         ApiContract.Money(order.GrandTotal), order.Currency, order.PaymentMethod.ToString(), order.PaymentDueAt);

@@ -5,7 +5,7 @@ import { request } from './client'
 import { isRecord } from './errors'
 
 export interface StoreSummary { id: string; name: string; slug: string; brandId: string; categoryId: string; minPrice: number | null; imageUrl: string | null }
-export interface StoreVariant { id: string; sku: string; color: string; storageGb: number; ramGb: number; price: number; available: number }
+export interface StoreVariant { id: string; sku: string; color: string; storageGb: number; ramGb: number; price: number; available: number; unitDiscount?: number; promotionName?: string | null }
 export interface StoreProduct { id: string; name: string; slug: string; description: string; specificationsJson: string | null; brand: Lookup; category: Lookup; variants: StoreVariant[]; images: CatalogImage[] }
 function text(v: unknown): string { if (typeof v !== 'string') throw new TypeError('Invalid text'); return v }
 function slug(v: unknown): string { const value = text(v); if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(value) || value.length > 220) throw new TypeError('Invalid slug'); return value }
@@ -20,7 +20,9 @@ export function decodeStoreProduct(v: unknown): StoreProduct {
   if (!isRecord(v) || !Array.isArray(v.variants) || v.variants.length === 0 || !Array.isArray(v.images)) throw new TypeError('Invalid product detail')
   const variants = v.variants.map(x => {
     if (!isRecord(x)) throw new TypeError('Invalid variant')
-    return { id: parseEntityId(x.id), sku: text(x.sku), color: text(x.color), storageGb: integer(x.storageGb, 1, 65536), ramGb: integer(x.ramGb, 1, 1024), price: parseMoney(x.price), available: integer(x.available, 0, 2147483647) }
+    const price = parseMoney(x.price), unitDiscount = x.unitDiscount === undefined ? 0 : parseMoney(x.unitDiscount)
+    if (unitDiscount > price) throw new TypeError('Invalid discount')
+    return { id: parseEntityId(x.id), sku: text(x.sku), color: text(x.color), storageGb: integer(x.storageGb, 1, 65536), ramGb: integer(x.ramGb, 1, 1024), price, available: integer(x.available, 0, 2147483647), unitDiscount, promotionName: x.promotionName === undefined || x.promotionName === null ? null : text(x.promotionName) }
   })
   const images = v.images.map(decodeImage)
   if (new Set(variants.map(x => x.id)).size !== variants.length || images.some(x => x.variantId !== null && !variants.some(y => y.id === x.variantId))) throw new TypeError('Invalid public relationship')

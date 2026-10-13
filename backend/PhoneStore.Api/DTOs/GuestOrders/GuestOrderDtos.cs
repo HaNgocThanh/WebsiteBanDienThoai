@@ -21,6 +21,6 @@ public sealed record GuestOrderDto(string Id, string OrderNumber, string Status,
     string Currency, decimal Subtotal, decimal DiscountTotal, decimal ShippingFee, decimal GrandTotal,
     string RecipientName, string Phone, string AddressLine, string? Locality, string Province,
     string CountryCode, string? Note, DateTime CreatedAt, DateTime? PaymentDueAt,
-    bool CreateAccountConsent, IReadOnlyList<GuestOrderItemDto> Items, IReadOnlyList<GuestOrderHistoryDto> Timeline);
+    bool CreateAccountConsent, IReadOnlyList<GuestOrderItemDto> Items, IReadOnlyList<GuestOrderHistoryDto> Timeline, string? VoucherCode = null, decimal VoucherDiscountTotal = 0);
 public sealed record GuestSessionDto(string Purpose, DateTime ExpiresAt);
 public sealed record OrderClaimDto(string Id, string OrderNumber);

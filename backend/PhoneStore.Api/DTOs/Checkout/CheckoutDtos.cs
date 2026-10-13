@@ -20,7 +20,7 @@ public sealed record PlaceOrderRequest(
     [MaxLength(1000)] string? Note = null,
     [MaxLength(150)] string? Locality = null,
     [RegularExpression("^[0-9]{2}$")] string? ProvinceCode = null,
-    [RegularExpression("^[0-9]{5}$")] string? WardCode = null);
+    [RegularExpression("^[0-9]{5}$")] string? WardCode = null, [MaxLength(40)] string? VoucherCode = null);
 public sealed record CheckoutSessionDto(string CheckoutKey, DateTime ExpiresAt);
 public sealed record CheckoutResultDto(string State, DateTime ExpiresAt, PlacedOrderDto? Order);
 public sealed record PlacedOrderDto(string Id, string OrderNumber, string Status, decimal GrandTotal,

@@ -18,6 +18,8 @@ public class Order
     public string Currency { get; set; } = "VND";
     public decimal Subtotal { get; set; }
     public decimal DiscountTotal { get; set; }
+    public string? VoucherCode { get; set; }
+    public decimal VoucherDiscountTotal { get; set; }
     public decimal ShippingFee { get; set; }
     public decimal GrandTotal { get; set; }
     public long? TierIdAtPurchase { get; set; }

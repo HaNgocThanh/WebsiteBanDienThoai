@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddScoped<PhoneStore.Api.Services.Reporting.ReportService>();
 
 builder.Services.AddDataProtection();
 
@@ -85,6 +86,10 @@ builder.Services.AddScoped<PhoneStore.Api.Services.OrderManagement.OrderExpiryPr
 builder.Services.AddHostedService<PhoneStore.Api.Services.OrderManagement.OrderExpiryWorker>();
 builder.Services.AddScoped<PhoneStore.Api.Services.Membership.MembershipService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.Membership.AdminCustomerService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Promotions.PromotionService>();
+    builder.Services.AddScoped<PhoneStore.Api.Services.Vouchers.VoucherService>();
+    builder.Services.AddScoped<PhoneStore.Api.Services.Reviews.ReviewService>();
+    builder.Services.AddScoped<PhoneStore.Api.Services.Surveys.SurveyService>();
 builder.Services.AddScoped<AuthBootstrap>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.ProfileService>();
@@ -109,6 +114,14 @@ builder.Services.AddSingleton<PhoneStore.Api.Services.Catalog.ICatalogImageStore
         ? new PhoneStore.Api.Services.Catalog.CloudinaryCatalogImageStore(services.GetRequiredService<IHostEnvironment>(), builder.Configuration)
         : new PhoneStore.Api.Services.Catalog.LocalCatalogImageStore(services.GetRequiredService<IHostEnvironment>(), builder.Configuration)));
 builder.Services.AddSingleton<IAuthEmailSender, LocalAuthEmailSender>();
+if (string.Equals(builder.Configuration["Email:Provider"], "Gmail", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddSingleton<PhoneStore.Api.Services.Email.GmailEmailSettings>();
+    builder.Services.AddSingleton<PhoneStore.Api.Services.Email.IEmailTransport, PhoneStore.Api.Services.Email.GmailTransport>();
+    builder.Services.AddSingleton<PhoneStore.Api.Services.Email.GmailEmailSender>();
+    builder.Services.AddSingleton<IAuthEmailSender>(s => s.GetRequiredService<PhoneStore.Api.Services.Email.GmailEmailSender>());
+    builder.Services.AddSingleton<PhoneStore.Api.Services.Notifications.IOrderEmailSender>(s => s.GetRequiredService<PhoneStore.Api.Services.Email.GmailEmailSender>());
+}
 builder.Services.AddScoped<PhoneStore.Api.Services.Payments.PaymentService>();
 builder.Services.AddSingleton<PhoneStore.Api.Services.Payments.SePaySandbox>();
 builder.Services.AddRateLimiter(options =>

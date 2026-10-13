@@ -61,7 +61,7 @@ public sealed class CatalogQuery : IValidatableObject
 }
 public sealed record LookupDto(string Id, string Name, string Slug, bool IsActive);
 public sealed record ImageDto(string Id, string? VariantId, string ImageUrl, string AltText, int SortOrder);
-public sealed record PublicVariantDto(string Id, string Sku, string Color, int StorageGb, int RamGb, decimal Price, int Available);
+public sealed record PublicVariantDto(string Id, string Sku, string Color, int StorageGb, int RamGb, decimal Price, int Available, decimal UnitDiscount = 0, string? PromotionName = null);
 public sealed record CartVariantDto(string VariantId, string ProductName, string ProductSlug, string Sku, string Color,
     int StorageGb, int RamGb, string? ImageUrl, string? ImageAltText);
 public sealed record AdminVariantDto(string Id, string ProductId, string Sku, string Color, int StorageGb, int RamGb, decimal Price, bool IsActive, string Version);

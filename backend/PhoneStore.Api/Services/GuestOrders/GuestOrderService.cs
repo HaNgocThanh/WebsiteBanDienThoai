@@ -20,10 +20,21 @@ public sealed class GuestOrderService(AppDbContext db, UserManager<ApplicationUs
         var normalized = users.NormalizeEmail(request.Email.Trim());
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var order = await db.Orders.FromSqlInterpolated($"SELECT * FROM [Orders] WITH (UPDLOCK, HOLDLOCK) WHERE [OrderNumber]={request.OrderNumber.Trim()}").SingleOrDefaultAsync(ct);
-        if (order is not null && order.UserId is null && order.NormalizedCustomerEmail == normalized)
+        if (order is not null && order.NormalizedCustomerEmail == normalized)
         {
-            if (await db.OrderAccessTokens.CountAsync(t => t.OrderId == order.Id && t.CreatedAt > Now.AddHours(-1), ct) < 5)
-                await mail.QueueAccessAsync(order, Enum.Parse<OrderAccessTokenPurpose>(request.Purpose), ct);
+            var recentSince = Now.AddHours(-1);
+            var recentTokens = await db.OrderAccessTokens.CountAsync(t => t.OrderId == order.Id && t.CreatedAt > recentSince, ct);
+            var accountLookupPrefix = "AccountOrderLookup:" + order.Id + ":";
+            var recentAccountLinks = await db.OutboxMessages.CountAsync(m => m.Type == "OrderMail"
+                && m.EventKey.StartsWith(accountLookupPrefix) && m.CreatedAt > recentSince, ct);
+            if (recentTokens + recentAccountLinks < 5)
+            {
+                if (order.UserId is null)
+                    await mail.QueueAccessAsync(order, Enum.Parse<OrderAccessTokenPurpose>(request.Purpose), ct);
+                else if (request.Purpose == "ViewOrder")
+                    // An ordinary account link is only a reminder, never a guest capability or login token.
+                    mail.Queue(new(1, order.Id, null, null, "AccountOrderLookup"), accountLookupPrefix + Guid.NewGuid().ToString("N"));
+            }
         }
         await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
     }
@@ -59,7 +70,7 @@ public sealed class GuestOrderService(AppDbContext db, UserManager<ApplicationUs
         return new(ApiContract.Id(order.Id), order.OrderNumber, order.Status.ToString(), order.PaymentMethod.ToString(), order.Currency,
             ApiContract.Money(order.Subtotal), ApiContract.Money(order.DiscountTotal), ApiContract.Money(order.ShippingFee), ApiContract.Money(order.GrandTotal),
             order.RecipientName, order.Phone, order.AddressLine, order.Locality, order.Province, order.CountryCode,
-            order.CustomerNote, order.CreatedAt, order.PaymentDueAt, consent, items, history);
+            order.CustomerNote, order.CreatedAt, order.PaymentDueAt, consent, items, history, order.VoucherCode, order.VoucherDiscountTotal);
     }
     private async Task<Order> AuthorizedAsync(GuestOrderGrant grant, CancellationToken ct)
     {

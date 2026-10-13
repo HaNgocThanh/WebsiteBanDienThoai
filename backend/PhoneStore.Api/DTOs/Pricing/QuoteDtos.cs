@@ -18,7 +18,7 @@ public sealed record QuoteAddress([Required, MaxLength(100)] string Province, [R
     [RegularExpression("^[0-9]{2}$")] string? ProvinceCode = null, [RegularExpression("^[0-9]{5}$")] string? WardCode = null, [MaxLength(150)] string? Locality = null);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record QuoteRequest([Required, MinLength(1), MaxLength(100)] List<QuoteItemRequest> Items,
-    [Required] QuoteAddress ShippingAddress, [RegularExpression("^[0-9a-f]{64}$")] string? QuoteHash = null) : IValidatableObject
+    [Required] QuoteAddress ShippingAddress, [RegularExpression("^[0-9a-f]{64}$")] string? QuoteHash = null, [MaxLength(40)] string? VoucherCode = null) : IValidatableObject
 {
     public IEnumerable<ValidationResult> Validate(ValidationContext context)
     {
@@ -26,6 +26,6 @@ public sealed record QuoteRequest([Required, MinLength(1), MaxLength(100)] List<
     }
 }
 public sealed record QuoteLine(string VariantId, int Quantity, string ProductName, string ProductSlug, string Sku,
-    string Color, int StorageGb, int RamGb, int Available, decimal UnitPrice, decimal UnitDiscount, decimal LineTotal, string? PromotionName);
+    string Color, int StorageGb, int RamGb, int Available, decimal UnitPrice, decimal UnitDiscount, decimal LineTotal, string? PromotionName, string? PromotionId = null, string? PromotionRule = null);
 public sealed record QuoteDto(IReadOnlyList<QuoteLine> Items, decimal Subtotal, decimal DiscountTotal, decimal ShippingFee,
-    decimal GrandTotal, string Currency, string QuoteHash);
+    decimal GrandTotal, string Currency, string QuoteHash, string? VoucherCode = null, decimal VoucherDiscountTotal = 0, [property: JsonIgnore] long? VoucherId = null, [property: JsonIgnore] string? VoucherRule = null);
