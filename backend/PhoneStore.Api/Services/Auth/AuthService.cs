@@ -29,8 +29,9 @@ public sealed class AuthService(AppDbContext db, UserManager<ApplicationUser> us
         ApplicationUser? created = null;
         await using (var transaction = await db.Database.BeginTransactionAsync(cancellationToken))
         {
+            await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, cancellationToken);
             await bootstrap.LockAsync(cancellationToken);
-            var tier = await bootstrap.EnsureAsync(cancellationToken);
+            await bootstrap.EnsureAsync(cancellationToken);
             var existing = await users.FindByEmailAsync(request.Email.Trim());
             if (existing is null)
             {
@@ -38,7 +39,7 @@ public sealed class AuthService(AppDbContext db, UserManager<ApplicationUser> us
                 var result = await users.CreateAsync(created, request.Password);
                 if (!result.Succeeded) return PasswordFailure(result);
                 AuthBootstrap.Require(await users.AddToRoleAsync(created, "Customer"));
-                db.CustomerProfiles.Add(new CustomerProfile { UserId = created.Id, TierId = tier.Id, EligibleSpend = 0, TierCalculatedAt = clock.GetUtcNow().UtcDateTime });
+                db.CustomerProfiles.Add(new CustomerProfile { UserId = created.Id, TierId = null, EligibleSpend = 0, TierCalculatedAt = clock.GetUtcNow().UtcDateTime });
                 await db.SaveChangesAsync(cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);

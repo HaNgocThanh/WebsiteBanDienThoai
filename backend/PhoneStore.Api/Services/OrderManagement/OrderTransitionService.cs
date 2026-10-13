@@ -8,7 +8,7 @@ using PhoneStore.Api.Entities;
 using PhoneStore.Api.Services.Checkout;
 namespace PhoneStore.Api.Services.OrderManagement;
 
-public sealed class OrderTransitionService(AppDbContext db, TimeProvider clock)
+public sealed class OrderTransitionService(AppDbContext db, TimeProvider clock, PhoneStore.Api.Services.Auth.AuthBootstrap userLocks, PhoneStore.Api.Services.Membership.MembershipService membership)
 {
     public static OrderStatus? Next(OrderStatus status) => status switch {
         OrderStatus.Placed => OrderStatus.Reviewing, OrderStatus.Reviewing => OrderStatus.Approved,
@@ -34,6 +34,9 @@ public sealed class OrderTransitionService(AppDbContext db, TimeProvider clock)
         var key = "Order.Transition:" + request.OperationKey.ToString("D");
         var hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { domain = "order-transition-v1", id, actor, target = target.ToString(), reason, match })));
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, ct);
+        var spendOwner = target == OrderStatus.Completed ? await db.Orders.AsNoTracking().Where(o => o.Id == id).Select(o => o.UserId).SingleOrDefaultAsync(ct) : null;
+        if (spendOwner is { } owner) await userLocks.LockUserAsync(owner, ct);
         await db.Database.ExecuteSqlInterpolatedAsync($"""
             DECLARE @result int;
             EXEC @result=sys.sp_getapplock @Resource={key}, @LockMode=N'Exclusive', @LockOwner=N'Transaction', @LockTimeout=10000;
@@ -49,6 +52,7 @@ public sealed class OrderTransitionService(AppDbContext db, TimeProvider clock)
         var order = await db.Orders.FromSqlInterpolated($"SELECT * FROM [Orders] WITH (UPDLOCK,HOLDLOCK) WHERE [Id]={id}").SingleOrDefaultAsync(ct)
             ?? throw Fail(404, "NOT_FOUND", "Không tìm thấy đơn hàng.");
         if (!CryptographicOperations.FixedTimeEquals(version, order.Version)) throw Fail(412, "VERSION_CONFLICT", "Đơn đã thay đổi. Hãy tải lại trước khi thao tác.");
+        if (target == OrderStatus.Completed && order.UserId != spendOwner) throw Fail(412, "VERSION_CONFLICT", "Chủ đơn đã thay đổi. Hãy tải lại.");
         if (Next(order.Status) != target) throw Fail(409, "INVALID_TRANSITION", "Không thể bỏ qua bước hoặc quay lại trạng thái trước.");
         var received = await db.Payments.Where(p => p.OrderId == id && p.Status == PaymentStatus.Confirmed).SumAsync(p => p.Amount, ct);
         var refunds = db.Refunds.Where(r => r.Payment.OrderId == id);
@@ -83,11 +87,15 @@ public sealed class OrderTransitionService(AppDbContext db, TimeProvider clock)
         db.OrderStatusHistories.Add(history);
         db.AuditLogs.Add(new AuditLog { ActorUserId = actor, Action = "OrderTransition", EntityType = "Order", EntityId = id.ToString(), Summary = "sha256:" + hash, CorrelationId = key, CreatedAt = now });
         await db.SaveChangesAsync(ct);
+        if (target == OrderStatus.Completed && spendOwner is { } user) {
+            await membership.SyncOrderAsync(order, ct);
+            await membership.RecalculateAsync(user, "Đơn hàng hoàn tất", ct);
+        }
         var result = new OrderTransitionDto(id.ToString(), target.ToString(), Convert.ToBase64String(order.Version), history.Id.ToString(), now);
         db.OutboxMessages.Add(new OutboxMessage { EventKey = key, Type = target == OrderStatus.Completed ? "OrderCompleted" : "OrderStateChanged",
             PayloadJson = JsonSerializer.Serialize(new { version = 1, orderId = id.ToString(), fromStatus = from.ToString(), toStatus = target.ToString(),
                 requestHash = hash, receipt = result, userAtCompletion = target == OrderStatus.Completed ? order.UserId : null,
-                eligibleMerchandise = order.Subtotal - order.DiscountTotal, spendEventKey = "OrderCompleted:" + id }), CreatedAt = now, NextAttemptAt = now });
+                eligibleMerchandise = order.Subtotal - order.DiscountTotal, spendEventKey = "order:" + id + ":completed" }), CreatedAt = now, NextAttemptAt = now });
         await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct); return result;
     }
 }

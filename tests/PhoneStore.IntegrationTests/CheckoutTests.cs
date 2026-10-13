@@ -109,7 +109,7 @@ public sealed class CheckoutTests(SqlFixture sql)
         body.Remove("email"); body.Remove("createAccountConsent"); body.Remove("consentTextVersion");
         var response = await Send(browser, "orders", body, key); Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         await using var db = sql.CreateContext(); var issued = await db.IdempotencyRequests.SingleAsync(k => k.Id == Guid.Parse(key)); var order = await db.Orders.SingleAsync(o => o.Id == issued.OrderId);
-        Assert.Equal(account.Id, order.UserId); Assert.Equal(account.Email, order.CustomerEmail); Assert.Equal(CustomerTierCode.Bronze, order.TierCodeSnapshot); Assert.NotNull(order.TierIdAtPurchase);
+        Assert.Equal(account.Id, order.UserId); Assert.Equal(account.Email, order.CustomerEmail); Assert.Null(order.TierCodeSnapshot); Assert.Null(order.TierIdAtPurchase);
         using var outsider = host.Browser(); await Login(host, outsider); await Problem(await Send(outsider, "orders", body, key), HttpStatusCode.NotFound, "CHECKOUT_NOT_FOUND");
         Assert.Equal(HttpStatusCode.NoContent, (await Send(browser, "auth/logout")).StatusCode); await Problem(await Send(browser, "orders", body, key), HttpStatusCode.NotFound, "CHECKOUT_NOT_FOUND");
     }

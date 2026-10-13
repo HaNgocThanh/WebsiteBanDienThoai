@@ -27,6 +27,7 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
     public async Task<CheckoutSessionDto> IssueAsync(CheckoutOwner owner, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, ct);
         await LockAsync("PhoneStore.Checkout.Issue:" + owner.LockKey, "Exclusive", ct);
         if (owner.UserId is { } userId) await AccountAsync(userId, ct);
         var now = Now();
@@ -48,6 +49,7 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
     public async Task<CheckoutResultDto> ResultAsync(CheckoutOwner owner, Guid keyId, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, ct);
         await LockAsync("PhoneStore.Checkout.Key:" + keyId.ToString("N"), "Exclusive", ct);
         var key = await db.IdempotencyRequests.AsNoTracking().SingleOrDefaultAsync(k => k.Id == keyId, ct);
         if (key is null || !Owned(key, owner)) throw new CheckoutException(404, "CHECKOUT_NOT_FOUND", "Không tìm thấy phiên checkout của bạn.");
@@ -77,6 +79,7 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
             throw new CheckoutException(400, "VALIDATION_ERROR", "Khách vãng lai cần email, lựa chọn tạo tài khoản và phiên bản nội dung đồng ý hợp lệ.");
         if (owner.UserId is not null && request.CreateAccountConsent == true) throw new CheckoutException(400, "VALIDATION_ERROR", "Tài khoản đăng nhập không cần tạo tài khoản mới.");
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, ct);
         await LockAsync("PhoneStore.Checkout.Key:" + keyId.ToString("N"), "Exclusive", ct);
         var key = await db.IdempotencyRequests.SingleOrDefaultAsync(k => k.Id == keyId, ct);
         if (key is null || !Owned(key, owner)) throw new CheckoutException(404, "CHECKOUT_NOT_FOUND", "Không tìm thấy phiên checkout của bạn.");
@@ -117,7 +120,7 @@ public sealed class CheckoutService(AppDbContext db, QuoteService pricing, UserM
             balances.Add(balance);
         }
         var quote = await pricing.QuoteAsync(new(items, address, request.QuoteHash), ct);
-        var membership = account is null ? null : await db.CustomerProfiles.AsNoTracking().Where(p => p.UserId == account.Id).Select(p => new { p.TierId, p.Tier.Code }).SingleOrDefaultAsync(ct);
+        var membership = account is null ? null : await db.CustomerProfiles.AsNoTracking().Where(p => p.UserId == account.Id).Select(p => new { p.TierId, Code = p.Tier == null ? (CustomerTierCode?)null : p.Tier.Code }).SingleOrDefaultAsync(ct);
         var order = new Order { OrderNumber = "PS" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(14)), UserId = owner.UserId,
             CustomerEmail = email, NormalizedCustomerEmail = normalizedEmail, RecipientName = Text(request.RecipientName), Phone = Text(request.Phone),
             AddressLine = address.AddressLine!, Locality = address.Locality, Province = address.Province, CountryCode = address.CountryCode,

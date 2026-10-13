@@ -43,8 +43,8 @@ public sealed partial class PaymentTests
         Assert.Single(await db.InventoryMovements.Where(m => m.OrderItemId == reservation.OrderItemId && m.Kind == InventoryMovementKind.Dispatch).ToListAsync());
         Assert.Equal(4, await db.OrderStatusHistories.CountAsync(h => h.OrderId == id && h.ActorType == OrderActorType.Admin));
         using var payload = JsonDocument.Parse((await db.OutboxMessages.SingleAsync(m => m.Type == "OrderCompleted" && m.PayloadJson.Contains("\"orderId\":\"" + order.Id + "\""))).PayloadJson);
-        Assert.Equal(1000000, payload.RootElement.GetProperty("eligibleMerchandise").GetDecimal()); Assert.Equal("OrderCompleted:" + order.Id, payload.RootElement.GetProperty("spendEventKey").GetString());
-        Assert.Equal(actor.Id, payload.RootElement.GetProperty("userAtCompletion").GetGuid()); Assert.Equal(0, await db.CustomerSpendEntries.CountAsync(e => e.OrderId == id));
+        Assert.Equal(1000000, payload.RootElement.GetProperty("eligibleMerchandise").GetDecimal()); Assert.Equal("order:" + order.Id + ":completed", payload.RootElement.GetProperty("spendEventKey").GetString());
+        Assert.Equal(actor.Id, payload.RootElement.GetProperty("userAtCompletion").GetGuid()); Assert.Equal(1, await db.CustomerSpendEntries.CountAsync(e => e.OrderId == id));
         await Problem(await Transition(admin, order.Id, "Delivered", await OrderVersion(admin, order.Id)), HttpStatusCode.Conflict, "INVALID_TRANSITION");
     }
     [Fact]

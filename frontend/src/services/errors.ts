@@ -21,6 +21,7 @@ export class ApiError extends Error {
 }
 
 function errorMessage(status: number, code: string): string {
+  if (code === 'ADMIN_ACCOUNT_PROTECTED') return 'Không thể khóa tài khoản quản trị hoặc tài khoản đang dùng.'
   if (code === 'INVALID_TRANSITION') return 'Bước xử lý không còn hợp lệ. Hãy tải lại đơn; không thể bỏ qua bước hoặc quay lại trạng thái trước.'
   if (code === 'PAYMENT_REQUIRED') return 'Cần nhận đủ tiền và xử lý khoản hoàn đang chờ trước bước này.'
   if (code === 'RESERVATION_INVALID') return 'Hàng giữ cho đơn đã thay đổi hoặc hết hạn. Hãy kiểm tra đơn và tồn kho.'

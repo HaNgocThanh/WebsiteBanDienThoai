@@ -501,7 +501,7 @@ namespace PhoneStore.Api.Data.Migrations
                     b.Property<DateTime>("TierCalculatedAt")
                         .HasColumnType("datetime2(3)");
 
-                    b.Property<long>("TierId")
+                    b.Property<long?>("TierId")
                         .HasColumnType("bigint");
 
                     b.Property<byte[]>("Version")
@@ -651,7 +651,7 @@ namespace PhoneStore.Api.Data.Migrations
                         .HasPrecision(18)
                         .HasColumnType("decimal(18,0)");
 
-                    b.Property<long>("NewTierId")
+                    b.Property<long?>("NewTierId")
                         .HasColumnType("bigint");
 
                     b.Property<long?>("PreviousTierId")
@@ -2374,8 +2374,7 @@ namespace PhoneStore.Api.Data.Migrations
                     b.HasOne("PhoneStore.Api.Entities.CustomerTier", "Tier")
                         .WithMany("CustomerProfiles")
                         .HasForeignKey("TierId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("PhoneStore.Api.Entities.ApplicationUser", "User")
                         .WithOne("CustomerProfile")
@@ -2419,8 +2418,7 @@ namespace PhoneStore.Api.Data.Migrations
                     b.HasOne("PhoneStore.Api.Entities.CustomerTier", "NewTier")
                         .WithMany()
                         .HasForeignKey("NewTierId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("PhoneStore.Api.Entities.CustomerTier", "PreviousTier")
                         .WithMany()

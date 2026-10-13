@@ -1,3 +1,4 @@
+import { tierNames } from '../services/membership'
 import { emptyDestination } from '../services/locations'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -75,7 +76,8 @@ export function ProfilePanel() {
           <TextField label="Email tài khoản" value={profile.email} readOnly hint="Email đã xác minh và không thể thay đổi." />
           <TextField label="Họ tên" value={fullName} onChange={event => setFullName(event.target.value)} required maxLength={150} />
           <TextField label="Số điện thoại hồ sơ" value={phone} onChange={event => setPhone(event.target.value)} type="tel" maxLength={30} />
-          <p>Hạng: {profile.tierCode ?? 'Chưa có'} · Chi tiêu hợp lệ: {profile.eligibleSpend.toLocaleString('vi-VN')} ₫</p>
+          <a href="/account/membership">Xem hạng và sổ chi tiêu</a>
+          <p>Hạng: {profile.tierCode ? tierNames[profile.tierCode] ?? profile.tierCode : 'Chưa có hạng'} · Chi tiêu hợp lệ: {profile.eligibleSpend.toLocaleString('vi-VN')} ₫</p>
           <button className="button" type="submit">Lưu hồ sơ</button>
         </fieldset></form>
       </div>

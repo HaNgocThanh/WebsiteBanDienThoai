@@ -1,4 +1,5 @@
-param([ValidateRange(1024,65535)][int]$ApiPort = 5080, [ValidateRange(1024,65535)][int]$WebPort = 5175, [ValidateSet('Debug','Release')][string]$Configuration = 'Debug')
+param([ValidateRange(1024,65535)][int]$ApiPort = 5080, [ValidateRange(1024,65535)][int]$WebPort = 5175, [ValidateSet('Debug','Release')][string]$Configuration = 'Debug',
+    [ValidateSet('catalog.spec.ts','inventory.spec.ts','storefront.spec.ts','cart.spec.ts','checkout.spec.ts','checkout-ui.spec.ts','order-management.spec.ts','payments.spec.ts','membership.spec.ts')][string[]]$TestFiles = @())
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $runId = [Guid]::NewGuid().ToString('N')
@@ -41,7 +42,7 @@ try {
     $env:PHONESTORE_E2E_MAILBOX = $mailbox
     New-Item -ItemType Directory -Path $images | Out-Null
     $env:PHONESTORE_E2E_IMAGES = $images
-    npm --prefix frontend run test:e2e -- --config playwright.catalog.config.ts
+    npm --prefix frontend run test:e2e -- --config playwright.catalog.config.ts @TestFiles
     if ($LASTEXITCODE -ne 0) { throw 'Catalog browser tests failed.' }
 } finally {
     $env:ConnectionStrings__DefaultConnection = $previousConnection

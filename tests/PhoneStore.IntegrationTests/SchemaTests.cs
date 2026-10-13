@@ -32,7 +32,7 @@ public class SchemaTests(SqlFixture fixture)
         await db.SaveChangesAsync();
         await db.Database.MigrateAsync();
         Assert.True(await db.Brands.AnyAsync(x => x.Name == name));
-        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(6, (await db.Database.GetAppliedMigrationsAsync()).Count());
         Assert.Empty(await db.Database.GetPendingMigrationsAsync());
         Assert.False(db.Database.HasPendingModelChanges());
     }
@@ -52,7 +52,7 @@ public class SchemaTests(SqlFixture fixture)
             await db.Database.MigrateAsync(); await db.Database.MigrateAsync();
             var stored = await db.ProductImages.AsNoTracking().SingleAsync(x => x.Id == imageId); Assert.Equal(image.ImageUrl, stored.ImageUrl); Assert.Equal("Legacy image", stored.AltText); Assert.Equal(5, stored.SortOrder);
             Assert.Equal(version, (await db.Products.AsNoTracking().SingleAsync()).Version); Assert.True(await db.Users.AnyAsync(x => x.Id == key)); Assert.Empty(await db.CatalogImageUploads.ToListAsync());
-            Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count()); Assert.False(db.Database.HasPendingModelChanges());
+            Assert.Equal(6, (await db.Database.GetAppliedMigrationsAsync()).Count()); Assert.False(db.Database.HasPendingModelChanges());
         }
         finally { await old.DisposeAsync(); }
     }
@@ -143,7 +143,7 @@ public class SchemaTests(SqlFixture fixture)
             await db.Database.ExecuteSqlRawAsync("UPDATE AspNetUserLogins SET LoginProvider='fixture-provider'");
             await db.Database.MigrateAsync();
             Assert.Equal("key", await db.Set<Microsoft.AspNetCore.Identity.IdentityUserLogin<Guid>>().Select(x => x.ProviderKey).SingleAsync());
-            Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync()).Count());
+            Assert.Equal(6, (await db.Database.GetAppliedMigrationsAsync()).Count());
         }
         finally { await old.DisposeAsync(); }
     }

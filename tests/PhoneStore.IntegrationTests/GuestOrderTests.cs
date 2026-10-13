@@ -154,23 +154,24 @@ public sealed class GuestOrderTests(SqlFixture sql)
         Assert.False(await db.CustomerSpendEntries.AnyAsync(e => e.OrderId == order.Id)); Assert.Single(await db.OutboxMessages.Where(m => m.EventKey == "OrderClaimed:" + order.Id).ToListAsync());
         var before = await db.OrderAccessTokens.CountAsync(t => t.OrderId == order.Id); Assert.Equal(HttpStatusCode.Accepted, (await Post(guest, "guest/order-access-requests", new { orderNumber = order.Number, email = order.Email, purpose = "ViewOrder" })).StatusCode); Assert.Equal(before, await db.OrderAccessTokens.CountAsync(t => t.OrderId == order.Id));
     }
-    [Fact]
-    public async Task Completed_claim_backfills_net_merchandise_and_refunds_once_under_concurrent_replay()
+    [Theory, InlineData(0), InlineData(200000)]
+    public async Task Completed_claim_backfills_net_merchandise_and_refunds_once_under_concurrent_replay(int merchandiseRefund)
     {
         using var auth = new AuthFactory(sql.ConnectionString); var mailbox = new OrderTestMailbox(); using var host = Server(auth, mailbox, new()); using var guest = Browser(host); var order = await Order(guest);
         var secret = await Access(host, guest, mailbox, order, "ClaimOrder"); using var account = Browser(host); var userId = await Account(auth, account, order.Email);
+        using (var scope = host.Services.CreateScope()) await scope.ServiceProvider.GetRequiredService<PhoneStore.Api.Services.Membership.MembershipService>().BootstrapAsync(default);
         await using (var db = sql.CreateContext())
         {
             var saved = await db.Orders.SingleAsync(o => o.Id == order.Id); saved.Status = OrderStatus.Completed; saved.CompletedAt = DateTime.UtcNow;
             var payment = new Payment { OrderId = order.Id, Method = PaymentMethod.BankTransfer, Status = PaymentStatus.Confirmed, Amount = 1030000 };
-            payment.Refunds.Add(new Refund { Status = RefundStatus.Completed, MerchandiseAmount = 200000, ShippingAmount = 30000, CreatedByUserId = userId, Reason = "Synthetic", EventKey = Guid.NewGuid().ToString(), RequestHash = new byte[32] });
+            payment.Refunds.Add(new Refund { Status = RefundStatus.Completed, MerchandiseAmount = merchandiseRefund, ShippingAmount = 30000, CreatedByUserId = userId, Reason = "Synthetic", EventKey = Guid.NewGuid().ToString(), RequestHash = new byte[32] });
             payment.Refunds.Add(new Refund { Status = RefundStatus.Pending, MerchandiseAmount = 100000, CreatedByUserId = userId, Reason = "Synthetic pending", EventKey = Guid.NewGuid().ToString(), RequestHash = new byte[32] });
             db.Payments.Add(payment); await db.SaveChangesAsync();
         }
         var results = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => Post(account, "me/order-claims", new { token = secret }))); Assert.All(results, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
-        await using var after = sql.CreateContext(); var entries = await after.CustomerSpendEntries.Where(e => e.OrderId == order.Id).ToListAsync(); Assert.Equal(2, entries.Count); Assert.Equal(800000, entries.Sum(e => e.Amount)); Assert.Contains(entries, e => e.EventKey == $"order:{order.Id}:completed"); Assert.Contains(entries, e => e.Kind == SpendEntryKind.Refund && e.Amount == -200000);
-        var profile = await after.CustomerProfiles.SingleAsync(p => p.UserId == userId); Assert.Equal(800000, profile.EligibleSpend); Assert.Null((await after.Orders.SingleAsync(o => o.Id == order.Id)).TierIdAtPurchase);
-        Assert.Equal(HttpStatusCode.OK, (await Post(account, "me/order-claims", new { token = secret })).StatusCode); Assert.Equal(2, await after.CustomerSpendEntries.CountAsync(e => e.OrderId == order.Id));
+        await using var after = sql.CreateContext(); var entries = await after.CustomerSpendEntries.Where(e => e.OrderId == order.Id).ToListAsync(); Assert.Equal(merchandiseRefund > 0 ? 2 : 1, entries.Count); Assert.Equal(1000000 - merchandiseRefund, entries.Sum(e => e.Amount)); Assert.Contains(entries, e => e.EventKey == $"order:{order.Id}:completed"); if (merchandiseRefund > 0) Assert.Contains(entries, e => e.Kind == SpendEntryKind.Refund && e.Amount == -merchandiseRefund);
+        var profile = await after.CustomerProfiles.SingleAsync(p => p.UserId == userId); Assert.Equal(1000000 - merchandiseRefund, profile.EligibleSpend); Assert.Equal(merchandiseRefund == 0, profile.TierId is not null); Assert.Null((await after.Orders.SingleAsync(o => o.Id == order.Id)).TierIdAtPurchase);
+        Assert.Equal(HttpStatusCode.OK, (await Post(account, "me/order-claims", new { token = secret })).StatusCode); Assert.Equal(merchandiseRefund > 0 ? 2 : 1, await after.CustomerSpendEntries.CountAsync(e => e.OrderId == order.Id));
     }
     [Fact]
     public async Task Consent_controls_setup_invitation_and_existing_email_never_auto_claims()

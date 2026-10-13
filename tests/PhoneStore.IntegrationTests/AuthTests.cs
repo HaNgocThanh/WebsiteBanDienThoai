@@ -182,7 +182,7 @@ public sealed class AuthTests(SqlFixture sql)
         Assert.False(user.EmailConfirmed);
         Assert.Equal(new[] { "Customer" }, await users.GetRolesAsync(user));
         var profile = await db.CustomerProfiles.Include(x => x.Tier).SingleAsync(x => x.UserId == user.Id);
-        Assert.Equal(0, profile.EligibleSpend); Assert.Equal(CustomerTierCode.Bronze, profile.Tier.Code); Assert.Equal(0, profile.Tier.MinimumSpend);
+        Assert.Equal(0, profile.EligibleSpend); Assert.Null(profile.TierId); Assert.Null(profile.Tier);
         Assert.Single(factory.Mailbox.Messages);
         var tamper = await Post(first, "auth/register", new { email = Email(), password = Password, fullName = "Test", role = "Admin", tierId = "1" });
         await Problem(tamper, HttpStatusCode.BadRequest, "VALIDATION_ERROR");

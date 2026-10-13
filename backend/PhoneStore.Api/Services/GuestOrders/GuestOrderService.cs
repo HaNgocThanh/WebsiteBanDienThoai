@@ -11,7 +11,7 @@ using PhoneStore.Api.Services.Checkout;
 namespace PhoneStore.Api.Services.GuestOrders;
 
 public sealed class GuestOrderService(AppDbContext db, UserManager<ApplicationUser> users,
-    AuthBootstrap authLocks, OrderAccessMailQueue mail, TimeProvider clock)
+    AuthBootstrap authLocks, OrderAccessMailQueue mail, TimeProvider clock, PhoneStore.Api.Services.Membership.MembershipService membership)
 {
     private DateTime Now => clock.GetUtcNow().UtcDateTime;
     private static CheckoutException Invalid() => new(400, "INVALID_ORDER_TOKEN", "Liên kết không hợp lệ, đã sử dụng hoặc đã hết hạn.");
@@ -82,6 +82,7 @@ public sealed class GuestOrderService(AppDbContext db, UserManager<ApplicationUs
     {
         var found = await TokenAsync(secret, OrderAccessTokenPurpose.ClaimOrder, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, ct);
         await authLocks.LockUserAsync(userId, ct);
         var account = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == userId && u.IsActive && u.EmailConfirmed, ct);
         if (account is null) throw new CheckoutException(401, "UNAUTHENTICATED", "Cần tài khoản đã xác minh.");
@@ -97,31 +98,13 @@ public sealed class GuestOrderService(AppDbContext db, UserManager<ApplicationUs
         order.UserId = userId; token.UsedAt = Now;
         if (order.Status == OrderStatus.Completed)
         {
-            await BackfillAsync(order, userId, ct);
-            var profile = await db.CustomerProfiles.SingleAsync(p => p.UserId == userId, ct);
-            await db.SaveChangesAsync(ct);
-            profile.EligibleSpend = Math.Max(0, await db.CustomerSpendEntries.Where(e => e.UserId == userId).SumAsync(e => e.Amount, ct));
-            // Tier thresholds/calculation are P5-01; claim must not rewrite purchase tier snapshots.
+            await membership.SyncOrderAsync(order, ct);
+            await membership.RecalculateAsync(userId, "Nhận đơn khách vãng lai đã hoàn tất", ct);
         }
         db.OutboxMessages.Add(new OutboxMessage { Type = "OrderClaimed", EventKey = "OrderClaimed:" + order.Id,
             PayloadJson = System.Text.Json.JsonSerializer.Serialize(new { version = 1, orderId = ApiContract.Id(order.Id) }),
             CreatedAt = Now, NextAttemptAt = Now });
         await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
         return new(ApiContract.Id(order.Id), order.OrderNumber);
-    }
-    private async Task BackfillAsync(Order order, Guid userId, CancellationToken ct)
-    {
-        var key = $"order:{order.Id}:completed";
-        if (!await db.CustomerSpendEntries.AnyAsync(e => e.EventKey == key, ct))
-            db.CustomerSpendEntries.Add(new CustomerSpendEntry { UserId = userId, OrderId = order.Id, Kind = SpendEntryKind.OrderCompleted,
-                Amount = order.Subtotal - order.DiscountTotal, EventKey = key, CreatedAt = Now });
-        var refunds = await db.Refunds.AsNoTracking().Where(r => r.Payment.OrderId == order.Id && r.Status == RefundStatus.Completed && r.MerchandiseAmount > 0).ToListAsync(ct);
-        foreach (var refund in refunds)
-        {
-            var refundKey = $"refund:{refund.Id}";
-            if (!await db.CustomerSpendEntries.AnyAsync(e => e.EventKey == refundKey, ct))
-                db.CustomerSpendEntries.Add(new CustomerSpendEntry { UserId = userId, OrderId = order.Id, RefundId = refund.Id,
-                    Kind = SpendEntryKind.Refund, Amount = -refund.MerchandiseAmount, EventKey = refundKey, CreatedAt = Now });
-        }
     }
 }

@@ -83,6 +83,8 @@ builder.Services.AddScoped<PhoneStore.Api.Services.OrderManagement.AfterSaleServ
 builder.Services.AddOptions<PhoneStore.Api.Services.OrderManagement.OrderExpiryOptions>().Bind(builder.Configuration.GetSection("OrderExpiry")).ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddScoped<PhoneStore.Api.Services.OrderManagement.OrderExpiryProcessor>();
 builder.Services.AddHostedService<PhoneStore.Api.Services.OrderManagement.OrderExpiryWorker>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Membership.MembershipService>();
+builder.Services.AddScoped<PhoneStore.Api.Services.Membership.AdminCustomerService>();
 builder.Services.AddScoped<AuthBootstrap>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PhoneStore.Api.Services.ProfileService>();
@@ -230,6 +232,13 @@ if (args.Contains("--bootstrap-auth", StringComparer.Ordinal))
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<AuthBootstrap>().RunAsync(builder.Configuration["Auth:BootstrapAdminEmail"], CancellationToken.None);
+    return;
+}
+
+if (args.Contains("--bootstrap-membership", StringComparer.Ordinal))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<PhoneStore.Api.Services.Membership.MembershipService>().BootstrapAsync(CancellationToken.None);
     return;
 }
 

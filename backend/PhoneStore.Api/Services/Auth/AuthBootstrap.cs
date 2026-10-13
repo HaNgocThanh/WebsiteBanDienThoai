@@ -39,25 +39,30 @@ public sealed class AuthBootstrap(AppDbContext db, RoleManager<IdentityRole<Guid
         var bronze = await db.CustomerTiers.SingleOrDefaultAsync(x => x.Code == CustomerTierCode.Bronze, cancellationToken);
         if (bronze is null)
         {
-            // Only the agreed baseline; no Silver/Gold/Diamond thresholds are invented.
-            bronze = new CustomerTier { Code = CustomerTierCode.Bronze, Name = "Bronze", MinimumSpend = 0, Rank = 1 };
+            // D-35: new accounts below one million VND have no tier.
+            bronze = new CustomerTier { Code = CustomerTierCode.Bronze, Name = "Bronze", MinimumSpend = 1_000_000, Rank = 1 };
             db.CustomerTiers.Add(bronze);
             await db.SaveChangesAsync(cancellationToken);
         }
-        if (bronze.MinimumSpend != 0 || bronze.Rank != 1)
-            throw new InvalidOperationException("Existing Bronze baseline must have MinimumSpend=0 and Rank=1.");
+        if (bronze.Rank != 1)
+            throw new InvalidOperationException("Existing Bronze tier must have Rank=1.");
         return bronze;
     }
 
     public async Task RunAsync(string? existingAdminEmail, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, cancellationToken);
         await LockAsync(cancellationToken);
         await EnsureAsync(cancellationToken);
         if (!string.IsNullOrWhiteSpace(existingAdminEmail))
         {
             var user = await users.FindByEmailAsync(existingAdminEmail.Trim());
-            if (user is null || !user.IsActive || !user.EmailConfirmed)
+            if (user is null)
+                throw new InvalidOperationException("Admin bootstrap requires an existing active, verified account.");
+            await LockUserAsync(user.Id, cancellationToken);
+            await db.Entry(user).ReloadAsync(cancellationToken);
+            if (!user.IsActive || !user.EmailConfirmed)
                 throw new InvalidOperationException("Admin bootstrap requires an existing active, verified account.");
             if (!await users.IsInRoleAsync(user, "Admin")) Require(await users.AddToRoleAsync(user, "Admin"));
             Require(await users.UpdateSecurityStampAsync(user));

@@ -9,7 +9,7 @@ using PhoneStore.Api.Services.Checkout;
 using PhoneStore.Api.Services.GuestOrders;
 namespace PhoneStore.Api.Services.OrderManagement;
 public sealed record AfterSaleAccess(Guid? UserId, bool Admin = false, GuestOrderGrant? Guest = null);
-public sealed class AfterSaleService(AppDbContext db, TimeProvider clock, PhoneStore.Api.Services.Auth.AuthBootstrap userLocks)
+public sealed class AfterSaleService(AppDbContext db, TimeProvider clock, PhoneStore.Api.Services.Auth.AuthBootstrap userLocks, PhoneStore.Api.Services.Membership.MembershipService membership)
 {
     private DateTime Now => new(clock.GetUtcNow().UtcTicks / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, DateTimeKind.Utc);
     private static CheckoutException Error(int status, string code) => new(status, code, "Thao tác hủy/hoàn tiền không hợp lệ. Kiểm tra trạng thái và tải lại thông tin.");
@@ -67,6 +67,7 @@ public sealed class AfterSaleService(AppDbContext db, TimeProvider clock, PhoneS
         var key = "Order.AfterSale:" + input.OperationKey.ToString("D");
         var hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { id, actor = access.UserId, access.Admin, guest = access.Guest?.TokenId, action, resourceId, etag, reason, reference, input.Decision, input.GoodsRecovered, input.MerchandiseAmount, input.ShippingAmount })));
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await PhoneStore.Api.Services.Membership.MembershipService.LockAsync(db, false, ct);
         var spendOwner = action == "Complete" ? await db.Orders.AsNoTracking().Where(o => o.Id == id).Select(o => o.UserId).SingleOrDefaultAsync(ct) : null;
         if (spendOwner is { } spendUser) await userLocks.LockUserAsync(spendUser, ct);
         await db.Database.ExecuteSqlInterpolatedAsync($"""
@@ -132,14 +133,10 @@ public sealed class AfterSaleService(AppDbContext db, TimeProvider clock, PhoneS
         if (access.Admin && action is "Complete" or "Fail")
             db.OrderInternalNotes.Add(new() { OrderId = id, ActorUserId = access.UserId!.Value, OperationKey = input.OperationKey, Text = action + ": " + reason + (reference is null ? "" : " — " + reference), CreatedAt = Now });
         db.AuditLogs.Add(new() { ActorUserId = access.UserId, Action = "AfterSale." + action, EntityType = "Order", EntityId = id.ToString(), Summary = "sha256:" + hash, CorrelationId = key, CreatedAt = Now });
-        if (action == "Complete" && refund is not null && refund.MerchandiseAmount > 0 && order.Status == OrderStatus.Completed && order.UserId is { } owner
-            && await db.CustomerSpendEntries.AnyAsync(e => e.OrderId == id && e.UserId == owner && e.Kind == SpendEntryKind.OrderCompleted, ct)
-            && !await db.CustomerSpendEntries.AnyAsync(e => e.EventKey == "refund:" + refund.Id, ct))
-            db.CustomerSpendEntries.Add(new() { UserId = owner, OrderId = id, RefundId = refund.Id, Kind = SpendEntryKind.Refund, Amount = -refund.MerchandiseAmount, EventKey = "refund:" + refund.Id, CreatedAt = Now });
         await db.SaveChangesAsync(ct);
-        if (action == "Complete" && spendOwner is { } profileUser) {
-            var profile = await db.CustomerProfiles.SingleOrDefaultAsync(p => p.UserId == profileUser, ct);
-            if (profile is not null) profile.EligibleSpend = Math.Max(0, await db.CustomerSpendEntries.Where(e => e.UserId == profileUser).SumAsync(e => e.Amount, ct));
+        if (action == "Complete" && spendOwner is { } profileUser && order.Status == OrderStatus.Completed) {
+            await membership.SyncOrderAsync(order, ct);
+            await membership.RecalculateAsync(profileUser, "Hoàn tiền hàng đã hoàn tất", ct);
         }
         var result = new AfterSaleReceipt(id.ToString(), order.Status.ToString(), Convert.ToBase64String(order.Version), cancellation?.Id.ToString() ?? refund?.Id.ToString(), cancellation is not null ? Convert.ToBase64String(cancellation.Version) : refund is not null ? Convert.ToBase64String(refund.Version) : null);
         db.OutboxMessages.Add(new() { EventKey = key, Type = eventType, PayloadJson = JsonSerializer.Serialize(new { version = 1, orderId = id.ToString(), requestHash = hash, receipt = result, refundId = refund?.Id.ToString(), merchandiseAmount = refund?.MerchandiseAmount, shippingAmount = refund?.ShippingAmount, spendEventKey = refund is null ? null : "refund:" + refund.Id }), CreatedAt = Now, NextAttemptAt = Now });

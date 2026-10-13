@@ -42,7 +42,7 @@ public sealed class ProfileTests(SqlFixture sql)
         var (browser, id) = await Customer(factory); using var owner = browser;
         var before = await owner.GetFromJsonAsync<JsonElement>("/api/v1/me");
         Assert.Equal(id.ToString(), before.GetProperty("userId").GetString());
-        Assert.Equal("Bronze", before.GetProperty("tierCode").GetString());
+        Assert.Equal(JsonValueKind.Null, before.GetProperty("tierCode").ValueKind);
         Assert.Equal(HttpStatusCode.BadRequest, (await Send(owner, HttpMethod.Patch, "me", new { fullName = "Changed", phone = "123", email = "other@example.invalid" })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await Send(owner, HttpMethod.Patch, "me", new { fullName = "Changed name", phone = "123" })).StatusCode);
         var after = await owner.GetFromJsonAsync<JsonElement>("/api/v1/me");

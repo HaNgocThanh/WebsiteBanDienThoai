@@ -14,7 +14,7 @@ public sealed class ProfileService(AppDbContext db, UserManager<ApplicationUser>
     {
         var user = await db.Users.AsNoTracking().SingleAsync(x => x.Id == userId, cancellationToken);
         var membership = await db.CustomerProfiles.AsNoTracking().Where(x => x.UserId == userId)
-            .Select(x => new { TierCode = x.Tier.Code.ToString(), x.EligibleSpend }).SingleOrDefaultAsync(cancellationToken);
+            .Select(x => new { TierCode = x.Tier == null ? null : x.Tier.Code.ToString(), x.EligibleSpend }).SingleOrDefaultAsync(cancellationToken);
         return new(user.Id, user.Email!, user.FullName, user.PhoneNumber, membership?.TierCode, ApiContract.Money(membership?.EligibleSpend ?? 0));
     }
     public async Task<IdentityResult> UpdateAsync(Guid userId, UpdateProfileRequest request, CancellationToken cancellationToken)
